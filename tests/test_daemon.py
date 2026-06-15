@@ -163,6 +163,7 @@ def test_every_backend_op_round_trips_through_daemon(running_daemon):
         "split": lambda: c.split(session=A),
         "tab": lambda: c.tab(),
         "focus": lambda: c.focus(session=A),
+        "set_name": lambda: c.set_name(None, "renamed", session=A),
         "var_set": lambda: c.var_set(None, "user.k", "v", session=A),
         "var_get": lambda: c.var_get(None, "user.k", session=A),
         "close": lambda: c.close(session=A),
@@ -182,6 +183,39 @@ def test_every_backend_op_round_trips_through_daemon(running_daemon):
         if name == "shutdown":
             continue
         driven[name]()  # 例外（DaemonError 等）が出れば失敗
+
+
+def test_set_name_over_socket(running_daemon):
+    fa, sockp, *_ = running_daemon
+    client = DaemonClient(sockp, SessionResolver())
+    client.set_name(None, "🟢 worker", session=A)
+    assert fa._get(A).info.name == "🟢 worker"
+
+
+def test_wait_until_text_over_socket(running_daemon):
+    fa, sockp, *_ = running_daemon
+    fa._get(A).screen = ["Remote Control active"]
+    client = DaemonClient(sockp, SessionResolver())
+    # marker が既に出ているので即返る（state は idle = 条件到達）。
+    assert client.wait(session=A, until_text="Remote Control active", timeout=1, poll_interval=0.05) == State.IDLE
+
+
+def test_wait_until_text_times_out_over_socket(running_daemon):
+    fa, sockp, *_ = running_daemon
+    fa._get(A).screen = ["nothing here"]
+    client = DaemonClient(sockp, SessionResolver())
+    with pytest.raises(DaemonError):  # wait_timeout を error で受ける
+        client.wait(session=A, until_text="never appears", timeout=0.2, poll_interval=0.05)
+
+
+def test_tab_in_window_over_socket(running_daemon):
+    fa, sockp, *_ = running_daemon
+    # A は window_id を持たないので、A と同じ窓を持つセッションを 1 つ用意する。
+    fa.add_session("WIN-SESS", "anchor", window_id="w-1", is_active=False)
+    client = DaemonClient(sockp, SessionResolver())
+    new_sid = client.tab(window_id="w-1")
+    new_info = next(s for s in client.list() if s.session_id == new_sid)
+    assert new_info.window_id == "w-1"
 
 
 def test_make_controller_prefers_daemon(monkeypatch, tmp_path):

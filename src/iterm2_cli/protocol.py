@@ -77,6 +77,7 @@ def _h_wait(c: Controller, p: dict) -> Any:
         None,
         session=p["session"],
         until=State(p.get("until", "idle")),
+        until_text=p.get("until_text"),
         timeout=p.get("timeout", 30.0),
         poll_interval=p.get("poll_interval", 0.5),
     )
@@ -88,11 +89,23 @@ def _h_split(c: Controller, p: dict) -> Any:
 
 
 def _h_new_tab(c: Controller, p: dict) -> Any:
-    return {"session_id": c.tab(profile=p.get("profile"), command=p.get("command"), new_window=p.get("new_window", False))}
+    return {
+        "session_id": c.tab(
+            profile=p.get("profile"),
+            command=p.get("command"),
+            new_window=p.get("new_window", False),
+            window_id=p.get("window_id"),
+        )
+    }
 
 
 def _h_focus(c: Controller, p: dict) -> Any:
     c.focus(None, session=p["session"])
+    return {}
+
+
+def _h_set_name(c: Controller, p: dict) -> Any:
+    c.set_name(None, p["name"], session=p["session"])
     return {}
 
 
@@ -122,6 +135,7 @@ HANDLERS: dict[str, Callable[[Controller, dict], Any]] = {
     "session.busy": _h_busy,
     "session.wait": _h_wait,
     "session.focus": _h_focus,
+    "session.set_name": _h_set_name,
     "session.close": _h_close,
     "session.get_var": _h_get_var,
     "session.set_var": _h_set_var,

@@ -126,3 +126,43 @@ def test_ping(fake):
     r = runner.invoke(cli.app, ["ping"])
     assert r.exit_code == 0
     assert "ok" in r.stdout
+
+
+def test_set_name(fake):
+    r = runner.invoke(cli.app, ["set-name", "🟢 worker", "-t", "a"])
+    assert r.exit_code == 0
+    assert fake._get(A).info.name == "🟢 worker"
+
+
+def test_set_name_json(fake):
+    r = runner.invoke(cli.app, ["set-name", "renamed", "-t", "a", "--json"])
+    assert r.exit_code == 0
+    data = json.loads(r.stdout)
+    assert data == {"session_id": A, "name": "renamed"}
+
+
+def test_wait_until_text_found(fake):
+    fake._get(A).screen = ["Remote Control active"]
+    r = runner.invoke(cli.app, ["wait", "a", "--until-text", "Remote Control active", "--timeout", "1"])
+    assert r.exit_code == 0
+    assert "Remote Control active" in r.stdout
+
+
+def test_wait_until_text_timeout_exit_2(fake):
+    fake._get(A).screen = ["nothing here"]
+    r = runner.invoke(cli.app, ["wait", "a", "--until-text", "never", "--timeout", "0.2"])
+    assert r.exit_code == 2
+
+
+def test_tab_in_window(fake):
+    fake.add_session("WIN-SESS", "anchor", window_id="w-1")
+    r = runner.invoke(cli.app, ["tab", "--in-window", "w-1"])
+    assert r.exit_code == 0
+    new_sid = r.stdout.strip()
+    new_info = next(s for s in fake.list_sessions() if s.session_id == new_sid)
+    assert new_info.window_id == "w-1"
+
+
+def test_tab_in_unknown_window_exit_2(fake):
+    r = runner.invoke(cli.app, ["tab", "--in-window", "nonexistent"])
+    assert r.exit_code == 2

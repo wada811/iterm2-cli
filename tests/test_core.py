@@ -140,3 +140,56 @@ def test_wait_times_out_when_busy():
     c = Controller(fa, SessionResolver(), sleep=lambda dt: t.__setitem__("v", t["v"] + dt), clock=lambda: t["v"])
     with pytest.raises(WaitTimeout):
         c.wait(session=A, until=State.IDLE, timeout=3, poll_interval=1)
+
+
+def test_set_name_sets_display_name():
+    fa, c = make()
+    c.set_name(A, "🟢 worker")
+    assert fa._get(A).info.name == "🟢 worker"
+
+
+def test_set_name_via_label():
+    fa, c = make(labels={"a": A})
+    c.set_name("a", "renamed")
+    assert fa._get(A).info.name == "renamed"
+
+
+def test_wait_until_text_returns_when_marker_present():
+    fa, _ = make()
+    fa._get(A).screen = ["connecting...", "Remote Control active"]
+    t = {"v": 0.0}
+    c = Controller(fa, SessionResolver(), sleep=lambda dt: t.__setitem__("v", t["v"] + dt), clock=lambda: t["v"])
+    assert c.wait(session=A, until_text="Remote Control active", timeout=5, poll_interval=1) == State.IDLE
+
+
+def test_wait_until_text_is_case_insensitive():
+    fa, _ = make()
+    fa._get(A).screen = ["REMOTE CONTROL ACTIVE"]
+    t = {"v": 0.0}
+    c = Controller(fa, SessionResolver(), sleep=lambda dt: t.__setitem__("v", t["v"] + dt), clock=lambda: t["v"])
+    assert c.wait(session=A, until_text="remote control active", timeout=5, poll_interval=1) == State.IDLE
+
+
+def test_wait_until_text_times_out_when_absent():
+    fa, _ = make()
+    fa._get(A).screen = ["nothing relevant here"]
+    t = {"v": 0.0}
+    c = Controller(fa, SessionResolver(), sleep=lambda dt: t.__setitem__("v", t["v"] + dt), clock=lambda: t["v"])
+    with pytest.raises(WaitTimeout):
+        c.wait(session=A, until_text="never appears", timeout=3, poll_interval=1)
+
+
+def test_tab_in_window_places_session_in_window():
+    fa, c = make()
+    fa.add_session("WIN-SESS", "anchor", window_id="w-1")
+    new_id = c.tab(window_id="w-1")
+    new_info = next(s for s in c.list() if s.session_id == new_id)
+    assert new_info.window_id == "w-1"
+
+
+def test_tab_in_unknown_window_raises():
+    from iterm2_cli.adapter import SessionNotFound
+
+    fa, c = make()
+    with pytest.raises(SessionNotFound):
+        c.tab(window_id="w-nonexistent")

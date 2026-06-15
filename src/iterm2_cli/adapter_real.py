@@ -124,11 +124,22 @@ class RealAdapter(ITerm2Adapter):
         return self._call(_run())
 
     def create_tab(
-        self, *, profile: str | None = None, command: str | None = None, new_window: bool = False
+        self,
+        *,
+        profile: str | None = None,
+        command: str | None = None,
+        new_window: bool = False,
+        window_id: str | None = None,
     ) -> str:
         async def _run():
             import iterm2
 
+            if window_id is not None:
+                window = self._app.get_window_by_id(window_id)
+                if window is None:
+                    raise SessionNotFound(window_id)
+                tab = await window.async_create_tab(profile=profile, command=command)
+                return tab.current_session.session_id
             if new_window or not self._app.terminal_windows:
                 window = await iterm2.Window.async_create(
                     self._connection, profile=profile, command=command
@@ -149,6 +160,12 @@ class RealAdapter(ITerm2Adapter):
     def close(self, session_id: str, *, force: bool = False) -> None:
         async def _run():
             await self._session_or_raise(session_id).async_close(force=force)
+
+        self._call(_run())
+
+    def set_name(self, session_id: str, name: str) -> None:
+        async def _run():
+            await self._session_or_raise(session_id).async_set_name(name)
 
         self._call(_run())
 
