@@ -34,6 +34,13 @@ def test_label_resolves_to_session_id():
     assert r.resolve("worker") == UUID_A
 
 
+def test_label_resolves_via_normalization():
+    # ラベルは保存時 "my-project" に正規化される。生の "my project" でも解決できること。
+    r = SessionResolver(labels={"my-project": UUID_A})
+    assert r.resolve("my project") == UUID_A
+    assert r.resolve("my/project") == UUID_A
+
+
 def test_uuid_target_returned_as_is():
     r = SessionResolver()
     assert r.resolve(UUID_B) == UUID_B

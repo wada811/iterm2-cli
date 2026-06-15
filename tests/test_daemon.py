@@ -124,6 +124,21 @@ def test_stop_daemon(running_daemon):
     assert not is_alive(sockp)
 
 
+def test_rpc_to_dead_socket_raises_daemon_error(short_sockdir):
+    # 存在しない socket への接続は OSError ではなく DaemonError として整える（CLI で exit 2）。
+    client = DaemonClient(short_sockdir / "nonexistent.sock", SessionResolver())
+    with pytest.raises(DaemonError):
+        client.list()
+
+
+def test_bad_until_value_is_bad_request(running_daemon):
+    _, sockp, *_ = running_daemon
+    client = DaemonClient(sockp, SessionResolver())
+    with pytest.raises(DaemonError) as ei:
+        client._rpc("session.wait", {"session": A, "until": "bogus", "timeout": 0.1})
+    assert "bad_request" in str(ei.value)
+
+
 def test_make_controller_prefers_daemon(monkeypatch, tmp_path):
     monkeypatch.setattr(daemon_mod, "is_alive", lambda p, **kw: True)
     monkeypatch.setattr(daemon_mod, "default_socket_path", lambda: tmp_path / "d.sock")

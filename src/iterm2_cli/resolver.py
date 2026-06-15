@@ -52,9 +52,14 @@ class SessionResolver:
         if session:
             return session
         # 2. 位置引数 target: 既知ラベル → UUID そのもの の順。
+        #    ラベルは保存時に normalize_label で正規化されるため、照合も正規化して合わせる
+        #    （例: "my project" も "my-project" として登録済みのラベルに解決できる）。
         if target:
-            if target in self._labels:
-                return self._labels[target]
+            from .labels import normalize_label
+
+            normalized = normalize_label(target)
+            if normalized in self._labels:
+                return self._labels[normalized]
             if _UUID_RE.match(target):
                 return target
             raise ResolutionError(

@@ -135,7 +135,8 @@ _ERROR_CODES: list[tuple[type[Exception], str]] = [
     (SessionNotFound, "session_not_found"),
     (UnknownKey, "unknown_key"),
     (WaitTimeout, "wait_timeout"),
-    (KeyError, "bad_request"),
+    # KeyError は handler 内の必須 param 欠落として下で先取りするため、ここには置かない。
+    (ValueError, "bad_request"),  # 例: 不正な until 値（State(...) が ValueError）
 ]
 
 

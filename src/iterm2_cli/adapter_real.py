@@ -53,6 +53,8 @@ class RealAdapter(ITerm2Adapter):
     def shutdown(self) -> None:
         if self._loop.is_running():
             self._loop.call_soon_threadsafe(self._loop.stop)
+        # ループスレッドの後始末を待つ（残ると次プロセスまで生き続ける）。
+        self._thread.join(timeout=2.0)
 
     def _call(self, coro, *, timeout: float = _DEFAULT_TIMEOUT):
         return asyncio.run_coroutine_threadsafe(coro, self._loop).result(timeout)
@@ -97,7 +99,10 @@ class RealAdapter(ITerm2Adapter):
         return self._call(_run())
 
     def send_text(self, session_id: str, text: str) -> None:
-        self._call(self._session_or_raise(session_id).async_send_text(text))
+        async def _run():
+            await self._session_or_raise(session_id).async_send_text(text)
+
+        self._call(_run())
 
     def get_screen_contents(self, session_id: str, max_lines: int | None = None) -> list[str]:
         async def _run():
@@ -134,13 +139,25 @@ class RealAdapter(ITerm2Adapter):
         return self._call(_run())
 
     def activate(self, session_id: str) -> None:
-        self._call(self._session_or_raise(session_id).async_activate())
+        async def _run():
+            await self._session_or_raise(session_id).async_activate()
+
+        self._call(_run())
 
     def close(self, session_id: str, *, force: bool = False) -> None:
-        self._call(self._session_or_raise(session_id).async_close(force=force))
+        async def _run():
+            await self._session_or_raise(session_id).async_close(force=force)
+
+        self._call(_run())
 
     def get_variable(self, session_id: str, name: str) -> str | None:
-        return self._call(self._session_or_raise(session_id).async_get_variable(name))
+        async def _run():
+            return await self._session_or_raise(session_id).async_get_variable(name)
+
+        return self._call(_run())
 
     def set_variable(self, session_id: str, name: str, value: str) -> None:
-        self._call(self._session_or_raise(session_id).async_set_variable(name, value))
+        async def _run():
+            await self._session_or_raise(session_id).async_set_variable(name, value)
+
+        self._call(_run())

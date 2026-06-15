@@ -101,3 +101,25 @@ def test_wait_times_out():
             sleep=sleep,
             clock=clock,
         )
+
+
+def test_wait_does_not_overrun_when_poll_interval_large():
+    # poll_interval(10) > timeout(1) でも、実経過は timeout 付近に収まる（残り時間で頭打ち）。
+    clock = _Clock()
+    slept = []
+
+    def sleep(dt):
+        slept.append(dt)
+        clock.t += dt
+
+    with pytest.raises(WaitTimeout):
+        wait_until(
+            lambda: State.BUSY,
+            target=State.IDLE,
+            timeout=1.0,
+            poll_interval=10.0,
+            sleep=sleep,
+            clock=clock,
+        )
+    assert clock.t <= 1.0  # 10 秒も眠らない
+    assert all(dt <= 1.0 for dt in slept)

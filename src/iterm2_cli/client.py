@@ -31,10 +31,16 @@ class DaemonClient:
     def _rpc(self, method: str, params: dict):
         self._counter += 1
         req = make_request(str(self._counter), method, params)
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-            s.connect(self._path)
-            s.sendall(encode(req))
-            line = read_line(s)
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                s.connect(self._path)
+                s.sendall(encode(req))
+                line = read_line(s)
+        except OSError as e:
+            # デーモンが check 後に停止した等。整ったエラーにして CLI で exit 2 に。
+            raise DaemonError(f"connection_failed: デーモンに接続できません ({e})") from e
+        if not line.strip():
+            raise DaemonError("no_response: デーモンが応答せず接続を閉じました")
         resp = decode(line)
         if not resp.get("ok"):
             err = resp.get("error", {})

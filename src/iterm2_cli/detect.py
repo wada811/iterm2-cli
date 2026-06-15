@@ -98,6 +98,8 @@ def wait_until(
         state = state_fn()
         if state == target:
             return state
-        if clock() >= deadline:
+        remaining = deadline - clock()
+        if remaining <= 0:
             raise WaitTimeout(f"{target.value} に達せずタイムアウト（最終状態={state.value}）")
-        sleep(poll_interval)
+        # 残り時間を超えて眠らない（poll_interval > 残り でも timeout を大きく超過しない）。
+        sleep(min(poll_interval, remaining))
