@@ -4,6 +4,9 @@ version = "0.0.1"
 description = "iTerm2 をスクリプト/AIエージェントから操作する CLI（iterm2 Python API を直接利用）"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "wada811" }]
 dependencies = ["typer>=0.12"]
 
 [project.scripts]
