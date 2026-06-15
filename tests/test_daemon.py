@@ -140,6 +140,50 @@ def test_bad_until_value_is_bad_request(running_daemon):
     assert "bad_request" in str(ei.value)
 
 
+def test_every_backend_op_round_trips_through_daemon(running_daemon):
+    """Backend の全操作をデーモン越しに通し、3層（client/handler/controller）の一致を担保。
+
+    新操作を Backend に足したらこのテストの DRIVEN にも足す必要がある（= 操作表面の単一ゲート）。
+    HANDLERS への登録漏れや params 名ズレはここで unknown_method/bad_request として顕在化する。
+    """
+    from iterm2_cli.backend import Backend
+
+    fa, sockp, *_ = running_daemon
+    fa._get(A).screen = ["$ ready"]  # busy マーカー無し → idle（wait が即返る）
+    c = DaemonClient(sockp, SessionResolver())
+
+    # 各 Backend 操作を 1 回ずつ実行（close は A を消すので最後）。idle セッションで wait も即返る。
+    driven = {
+        "list": lambda: c.list(),
+        "send": lambda: c.send(None, "x", session=A),
+        "send_key": lambda: c.send_key(None, ["enter"], session=A),
+        "read": lambda: c.read(session=A),
+        "busy": lambda: c.busy(session=A),
+        "wait": lambda: c.wait(session=A, until=State.IDLE, timeout=1, poll_interval=0.05),
+        "split": lambda: c.split(session=A),
+        "tab": lambda: c.tab(),
+        "focus": lambda: c.focus(session=A),
+        "var_set": lambda: c.var_set(None, "user.k", "v", session=A),
+        "var_get": lambda: c.var_get(None, "user.k", session=A),
+        "close": lambda: c.close(session=A),
+        "shutdown": lambda: None,  # ライフサイクル（socket 越しではない）
+    }
+
+    # 公開 Backend メソッド集合とテスト網羅集合が一致すること（新操作のテスト漏れを防ぐ）。
+    backend_methods = {m for m in dir(Backend) if not m.startswith("_")}
+    assert backend_methods == set(driven), (
+        f"Backend と契約テストの操作集合が不一致: "
+        f"未網羅={backend_methods - set(driven)} 余分={set(driven) - backend_methods}"
+    )
+
+    # close 以外を先に、close を最後に実行（A を消すため）。
+    order = [k for k in driven if k != "close"] + ["close"]
+    for name in order:
+        if name == "shutdown":
+            continue
+        driven[name]()  # 例外（DaemonError 等）が出れば失敗
+
+
 def test_make_controller_prefers_daemon(monkeypatch, tmp_path):
     monkeypatch.setattr(daemon_mod, "is_alive", lambda p, **kw: True)
     monkeypatch.setattr(daemon_mod, "default_socket_path", lambda: tmp_path / "d.sock")

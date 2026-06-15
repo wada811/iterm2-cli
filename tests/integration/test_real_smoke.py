@@ -4,8 +4,11 @@
 
     ITERM2_CLI_INTEGRATION=1 uv run --extra iterm2 pytest tests/integration -q
 
-非破壊: 使い捨ての新規ウィンドウ（cat 実行）を作り、送信→エコー読取→close する。
-既存ペインには触れない。
+非破壊: 使い捨ての新規ウィンドウ（cat 実行）を作り、各操作後に close する。既存ペインには触れない。
+
+接続は **1 本を共有**する（module スコープ）。iterm2.Connection に公開 close API は無く、
+接続はプロセス終了で解放する設計のため、同一プロセスで張り直さない（実 CLI=1プロセス、
+デーモン=接続を生涯保持、という実使用に一致）。
 """
 
 from __future__ import annotations
@@ -21,29 +24,54 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_create_send_read_close():
+@pytest.fixture(scope="module")
+def adapter():
     from iterm2_cli.adapter_real import RealAdapter
 
-    adapter = RealAdapter.connect()
-    sid = None
+    a = RealAdapter.connect()
     try:
-        sid = adapter.create_tab(command="cat", new_window=True)
-        assert sid
+        yield a
+    finally:
+        a.shutdown()
 
+
+def test_create_send_read_close(adapter):
+    sid = adapter.create_tab(command="cat", new_window=True)
+    assert sid
+    try:
         marker = f"itest-{os.getpid()}-ok"
         adapter.send_text(sid, marker)
         adapter.send_text(sid, "\r")
 
-        # cat のエコーを待つ（数回リトライ）。
         hit = False
         for _ in range(20):
-            lines = adapter.get_screen_contents(sid)
-            if any(marker in line for line in lines):
+            if any(marker in line for line in adapter.get_screen_contents(sid)):
                 hit = True
                 break
             time.sleep(0.1)
         assert hit, "送信テキストが画面に現れなかった"
     finally:
-        if sid:
-            adapter.close(sid, force=True)
-        adapter.shutdown()
+        adapter.close(sid, force=True)
+
+
+def test_var_split_focus_list(adapter):
+    """RealAdapter の var/split/activate/list を実機で被覆（使い捨てウィンドウで非破壊）。"""
+    sid = adapter.create_tab(command="cat", new_window=True)
+    split_sid = None
+    try:
+        # 変数 set/get 往復。
+        adapter.set_variable(sid, "user.itest", "v1")
+        assert adapter.get_variable(sid, "user.itest") == "v1"
+
+        # 分割 → 新セッションが list に現れる。
+        split_sid = adapter.split_pane(sid, vertical=True)
+        assert split_sid and split_sid != sid
+        ids = {s.session_id for s in adapter.list_sessions()}
+        assert {sid, split_sid} <= ids
+
+        # フォーカス移動（例外が出ないこと）。
+        adapter.activate(sid)
+    finally:
+        if split_sid:
+            adapter.close(split_sid, force=True)
+        adapter.close(sid, force=True)

@@ -51,10 +51,12 @@ class RealAdapter(ITerm2Adapter):
         return cls(connection, app, loop, thread)
 
     def shutdown(self) -> None:
+        # iterm2.Connection に公開 close API は無く、websocket はプロセス終了で解放される設計。
+        # 実 CLI は 1 コマンド = 1 プロセス、デーモンは接続を生涯保持するため問題にならない。
+        # 同一プロセスで張り直すと再接続が詰まりうるので、接続は使い回す（テストは module 共有）。
         if self._loop.is_running():
             self._loop.call_soon_threadsafe(self._loop.stop)
-        # ループスレッドの後始末を待つ（残ると次プロセスまで生き続ける）。
-        self._thread.join(timeout=2.0)
+        self._thread.join(timeout=2.0)  # ループスレッドの後始末を待つ
 
     def _call(self, coro, *, timeout: float = _DEFAULT_TIMEOUT):
         return asyncio.run_coroutine_threadsafe(coro, self._loop).result(timeout)
