@@ -4,7 +4,8 @@
 
 要件（[requirements.md](./requirements.md)）を満たす実装設計。言語選定・アーキテクチャ・コマンド表面・socket プロトコル・送信作法・完了検知・外部からの利用方法を定める。調査根拠は [research.md](./research.md)。
 
-> 本書の「コマンド表面」「socket API」はユーザーが「深く検討する余地がある」と指摘した重点項目。第一版を確定仕様として示し、実装フェーズで個別に精査する余地を各所に明記する。
+> 本書はアーキテクチャと socket 契約を定める。CLI の利用方法・フラグ・exit code・`--json` 形は
+> 利用者向けの [README](../README.md) を正とし、ここでは重複させない。
 
 ---
 
@@ -96,34 +97,36 @@ iTerm2 は状態を持つ外部アプリで、実接続は遅く（cold 1.57s）
 
 > **完全代替方針**: 各操作は `iterm2` Python API（下表「役割 / 実装」の `async_*` メソッド）を**直接呼ぶ**。it2api へのシェルアウトはしない（実行時依存ゼロ）。it2api は移植元リファレンスに留める。
 
-| CLI | socket method | 主な params | 役割 / 実装（Python API） |
-|---|---|---|---|
-| `list [--json]` | `session.list` | — | window/tab/session 階層列挙（`terminal_windows`） |
-| `send <target> <text> [--literal]` | `session.send_text` | target,text | 本文送信（`async_send_text`）。既定で bracket-paste 安全に送る。`--literal` で生送出 |
-| `send-key <target> <key>...` | `session.send_key` | target,keys | enter/tab/escape/backspace/delete/up/down/left/right/ctrl-c 等のキー送出 |
-| `read <target> [--tail N] [--json]` | `session.read` | target,tail | 画面内容読取（`async_get_screen_contents`） |
-| `busy <target> [--json]` | `session.busy` | target | busy/idle/needs-input 判定（exit code + JSON）。`user.itermcli_state` 優先、画面マーカーをフォールバック（§7）|
-| `wait <target> [--timeout S] [--for STATE]` | `session.wait` | target,timeout,state | 指定状態（既定 idle）まで待機 |
-| `split <target> [-h\|-v] [--profile P] [--cmd C]` | `pane.split` | target,vertical,profile,command | ペイン分割し新 session_id を返す（`async_split_pane`） |
-| `tab [--profile P] [--cmd C] [--window]` | `window.new_tab` | profile,command | タブ（or `--window` で新窓）作成（`async_create_tab` / `Window.async_create`） |
-| `focus <target>` | `session.focus` | target | フォーカス移動（`async_activate`） |
-| `close <target> [--force]` | `session.close` | target,force | ペイン/タブ閉鎖（`async_close`） |
-| `var get <target> <name>` | `session.get_var` | target,name | 変数取得（`async_get_variable`） |
-| `var set <target> <name> <value>` | `session.set_var` | target,name,value | 変数設定（`async_set_variable`） |
-| `set-status -t <target> <key> <value>` | （`session.set_var` の糖衣）| key,value | `user.<key>` に書く（非破壊）。状態は `itermcli_state` |
-| `set-progress -t <target> <n>` | （`session.set_var` の糖衣）| n | `user.itermcli_progress` に書く |
-| `label set <name> <session_id>` / `label ls` / `label rm <name>` | （ローカル）| — | ラベル↔session_id マッピング管理（iTerm2 不要）|
-| `daemon [--socket PATH] [--stop]` | `system.stop` | — | 常駐起動／停止 |
-| `ping` | `system.ping` | — | 疎通確認 |
+本節は **socket method ↔ Controller / Python API の契約**を定める（CLI のフラグ・target 指定規則・
+exit code・`--json` 形は利用者向けの [README](../README.md) を正とし、ここでは重複させない）。
+`params` は socket リクエストの `params` キー（`session` は具体的な session_id。current 解決はクライアント側）。
 
-> **target 指定の規則**: ペイロードを持つコマンド（send/send-key/var/set-status/set-progress）は `-t/--target`、対象のみのコマンド（read/busy/wait/split/focus/close）は位置引数。いずれも省略時 current、`-s/--session` で id 明示。
-> **notify は将来**: design 初版から外す。必要時に追加。
+| socket method | params | 対応 CLI | 実装（Controller / Python API） |
+|---|---|---|---|
+| `session.list` | — | `list` | `terminal_windows` 走査 |
+| `session.send_text` | session, text | `send` | `async_send_text` |
+| `session.send_key` | session, keys | `send-key` | keys を符号化 → `async_send_text` |
+| `session.read` | session, tail | `read` | `async_get_screen_contents` |
+| `session.busy` | session | `busy` | `_state`（`user.itermcli_state` 優先 → 画面マーカー、§7）|
+| `session.wait` | session, until, timeout, poll_interval | `wait` | `wait_until`（既定 until=idle）|
+| `pane.split` | session, vertical, profile | `split` | `async_split_pane` → 新 session_id |
+| `window.new_tab` | profile, command, new_window | `tab` | `async_create_tab` / `Window.async_create` → 新 session_id |
+| `session.focus` | session | `focus` | `async_activate` |
+| `session.close` | session, force | `close` | `async_close` |
+| `session.get_var` | session, name | `var get` | `async_get_variable` |
+| `session.set_var` | session, name, value | `var set` / `set-status` / `set-progress` | `async_set_variable` |
+| `system.ping` | — | `ping` | 疎通確認 |
+| `system.stop` | — | `daemon --stop` | デーモン停止（HANDLERS 外の特別扱い）|
+
+- `set-status <key> <value>` は `session.set_var` で `user.<key>` を書く糖衣（状態は `itermcli_state`）。`set-progress` は `user.itermcli_progress`。
+- `label set/ls/rm` は session_id↔ラベルのローカル永続化で、**socket を経由しない**（iTerm2 不要）。
+- **notify は将来**: design 初版から外す。必要時に追加。
 
 > 検討余地（決定済）:
 > - **send/send-key の境界**: `send` に `--enter/-e` 糖衣を追加（本文送出→確定キーを順に送る）。send-key は維持。
 > - **busy の状態語彙**: `busy`/`needs-input`/`idle`/`unknown`。hook の語彙 `running/needs_input/idle/done` は変数値として吸収（running→busy, idle/done→idle）。
 > - **set-status/set-progress の写像**: **user 変数に書く（非破壊）**。`set-status <k> <v>`→`user.<k>`、状態は `user.itermcli_state`、進捗は `user.itermcli_progress`。セッション名は既存の命名（状態絵文字など）を壊さないため既定で触らない（バッジ反映は将来オプション）。
-> - **階層操作（move/reorder）・arrangement**: 本フェーズ対象外。必要時に Python API（`Arrangement.async_save/restore` 等）で追加。
+> - **階層操作（move/reorder）・arrangement**: 初版スコープ外。必要時に Python API（`Arrangement.async_save/restore` 等）で追加。
 
 ---
 
@@ -189,10 +192,12 @@ iterm2-cli/
 
 ---
 
-## 10. 検証計画（設計の妥当性）
+## 10. 検証
 
-[requirements.md](./requirements.md) の受け入れ基準に対し、実装フェーズで:
-1. `uv run --with iterm2 -- it2api list-sessions` でレイテンシ実測（[research.md](./research.md) §3.1 に転記）→ G4/デーモンの優先度を数値で裏付け。
-2. `async_get_screen_contents` で他ペイン画面が読めるか・API 許可ダイアログ挙動。
-3. `user.itermcli_state`（set-status / OSC 1337 SetUserVar）を読む完了検知の実証。
-4. `send`/`send-key` 分離で bracket-paste 問題が解消するか。
+- **ユニット**: `uv run pytest`（`FakeAdapter` ベース・iTerm2 不要）。resolver / keys / labels / detect /
+  Controller / CLI / protocol / daemon（実 Unix socket 越し）/ Backend 整合 / 全操作のデーモン往復契約。
+- **lint**: `uv run ruff check src tests`（F / B / I）。
+- **結合（実 iTerm2・オプトイン）**: `ITERM2_CLI_INTEGRATION=1 uv run --extra iterm2 pytest tests/integration`。
+  create→send→read→close と var/split/activate/list を使い捨てウィンドウで実機確認。
+- **レイテンシ**: 都度接続 cold 1.57s / warm 0.58s、デーモン経由 list ≈ 5ms（[research.md](./research.md) §3.1）。
+- **並行性**: デーモンへ 8 スレッド×並行 RPC を 0 errors で実機確認。

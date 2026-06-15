@@ -57,13 +57,13 @@ iTerm2 には既に同梱 CLI `it2api` があり、Python API のほぼ全操作
 | FR1 | セッション/ペイン階層の列挙 | `list --json` が window/tab/session の階層と session_id を返す |
 | FR2 | テキスト送信（本文）と確定キーの分離 | `send <target> <text>` は本文のみ送出、`send-key <target> enter` で確定。bracket-paste 安全 |
 | FR3 | 画面内容読取 | `read <target> [--tail N] [--json]` が現在の画面行を返す |
-| FR4 | busy/完了判定 | `busy <target>` が exit code/JSON で状態を返す。検知は OSC9/99/777・hook 駆動を第一、画面マーカーをフォールバック |
-| FR5 | 完了待ち | `wait <target> [--timeout]` が完了まで（またはタイムアウトまで）ブロックする |
+| FR4 | busy/完了判定 | `busy` が exit code/JSON で状態を返す。検知は `user.itermcli_state`（`set-status` / OSC 1337 SetUserVar）優先、画面マーカーをフォールバック |
+| FR5 | 完了待ち | `wait [--timeout S] [--until STATE]` が指定状態（既定 idle）まで（またはタイムアウトまで）ブロックする |
 | FR6 | ペイン分割・タブ/ウィンドウ作成 | `split`/`tab` が新規セッションを作り session_id を返す |
-| FR7 | フォーカス・クローズ | `focus`/`close <target>` が対象に作用 |
-| FR8 | 変数 get/set | `var get|set <target> <name> [value]` |
-| FR9 | 状態報告 | `set-status`/`set-progress` がセッション名/バッジ/変数に反映 |
-| FR10 | 通知 | `notify [--title --body]` |
+| FR7 | フォーカス・クローズ | `focus`/`close` が対象に作用 |
+| FR8 | 変数 get/set | `var get <name>` / `var set <name> <value>` |
+| FR9 | 状態報告 | `set-status <key> <value>` / `set-progress <n>` が user 変数（`user.itermcli_state` / `user.itermcli_progress`）に反映（非破壊）|
+| FR10 | 通知（将来） | `notify`。design 初版から外す。必要時に追加 |
 | FR11 | `<target>` 解決 | `--session <id>` → ラベル → `$ITERM_SESSION_ID`（current）の順。省略時は current |
 | FR12 | デーモン | `daemon` 起動時は Unix socket 経由で低レイテンシ。未起動時は都度接続にフォールバック（同一コマンド表面） |
 
@@ -87,15 +87,16 @@ iTerm2 には既に同梱 CLI `it2api` があり、Python API のほぼ全操作
 
 ## 6. スコープ外（今回は作らない）
 
-- it2api 全操作（profile/arrangement/tmux 連携/各種 monitor 等）の**網羅的カバーは本フェーズ対象外**（完全代替は段階的目標。本フェーズはギャップ G1〜G7 と中核操作を優先）。なお「it2api にシェルアウトしない＝Python API 直接実装」は対象内の設計判断。
-- iTerm2 以外のターミナルエミュレータ対応（将来の抽象化候補だが本フェーズ対象外）。
+- it2api 全操作（profile/arrangement/tmux 連携/各種 monitor 等）の**網羅的カバーは初版スコープ外**（完全代替は段階的目標。初版はギャップ G1〜G7 と中核操作を優先）。なお「it2api にシェルアウトしない＝Python API 直接実装」は対象内の設計判断。
+- iTerm2 以外のターミナルエミュレータ対応（将来の抽象化候補だが初版スコープ外）。
+- 通知 `notify`（将来）。
 - ブラウザ自動化（cmux にはあるが本 CLI のコア責務外）。
 
 ---
 
-## 7. 受け入れ基準（要件定義フェーズの完了条件）
+## 7. 受け入れ基準
 
-本フェーズ（要件定義＋設計）の成果物は以下を満たすこと:
+設計・初版が以下を満たすこと:
 1. it2api ギャップ分析と完全代替方針（Python API 直接実装・実行時依存ゼロ・段階的網羅）が明示されている（本書 §3）。
 2. 言語が根拠付きで Python に確定している（[design.md](./design.md)）。
 3. レイテンシ対策（都度接続＋任意デーモン）の方針が定まっている。

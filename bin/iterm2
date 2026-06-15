@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# iterm2-cli の短縮ラッパー。`iterm2 <subcommand>` で呼べる。
+#
+# 使い方: このファイルを PATH に通す（例）
+#   ln -s "$(pwd)/bin/iterm2" ~/.local/bin/iterm2
+# 以降は `iterm2 list --json` のように使える。
+#
+# 実体は `uv run --project <repo> --extra iterm2 iterm2-cli` への委譲。
+# repo 位置はこのスクリプト自身から解決するので、どこに symlink しても動く。
+set -euo pipefail
+
+# シンボリックリンクを辿ってスクリプト本体のディレクトリを得る。
+src="${BASH_SOURCE[0]}"
+while [ -h "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  [[ $src != /* ]] && src="$dir/$src"
+done
+repo="$(cd -P "$(dirname "$src")/.." && pwd)"
+
+exec uv run --project "$repo" --extra iterm2 iterm2-cli "$@"

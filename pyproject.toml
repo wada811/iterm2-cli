@@ -8,6 +8,7 @@ dependencies = ["typer>=0.12"]
 
 [project.scripts]
 iterm2-cli = "iterm2_cli.cli:app"
+iterm2 = "iterm2_cli.cli:app"  # 短縮エイリアス（uv tool install で `iterm2` が使える）
 
 [project.optional-dependencies]
 # 実 iTerm2 への接続（RealAdapter / 結合テスト）でのみ必要。
