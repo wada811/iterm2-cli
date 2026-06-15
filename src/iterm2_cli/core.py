@@ -1,6 +1,6 @@
 """Controller — 中核操作（design.md §5）。
 
-adapter（port）と resolver を束ね、CLI/socket/オーケストレータ から呼べる操作を提供する。
+adapter（port）と resolver を束ね、CLI/socket/ライブラリ利用側から呼べる操作を提供する。
 adapter にのみ依存し、iterm2 pip を直接触らない。戻り値は素のデータ（--json 化しやすい）。
 """
 

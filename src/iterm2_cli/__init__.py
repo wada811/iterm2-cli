@@ -1,6 +1,6 @@
 """iterm2-cli: iTerm2 をスクリプト/AIエージェントから操作する CLI のライブラリ層。
 
-公開 API（オーケストレータ 等から import する想定）:
+公開 API（外部のライブラリ利用側から import する想定）:
     from iterm2_cli import Controller, RealAdapter, SessionResolver, State, Backend, LabelStore
 
 RealAdapter はクラス参照の import だけなら iterm2 パッケージ不要（connect() で遅延 import）。

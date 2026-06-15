@@ -2,7 +2,7 @@
 
 作成日: 2026-06-15
 
-要件（[requirements.md](./requirements.md)）を満たす実装設計。言語選定・アーキテクチャ・コマンド表面・socket プロトコル・送信作法・完了検知・オーケストレータ 統合を定める。調査根拠は [research.md](./research.md)。
+要件（[requirements.md](./requirements.md)）を満たす実装設計。言語選定・アーキテクチャ・コマンド表面・socket プロトコル・送信作法・完了検知・外部からの利用方法を定める。調査根拠は [research.md](./research.md)。
 
 > 本書の「コマンド表面」「socket API」はユーザーが「深く検討する余地がある」と指摘した重点項目。第一版を確定仕様として示し、実装フェーズで個別に精査する余地を各所に明記する。
 
@@ -13,7 +13,7 @@
 | 観点 | Python（採用） | TypeScript/Node | Go / Rust |
 |---|---|---|---|
 | iTerm2 API アクセス | `iterm2` pip を直接利用（公式・最短） | ネイティブ手段なし。Python 橋渡し or websocket+protobuf 自前実装 | protobuf+認証を全自前実装 |
-| オーケストレータ 統合 | 既存資産が全部 Python。ライブラリ共有・置換が容易 | 言語境界が増える | 言語境界が増える |
+| 利用側との統合 | Python 製の利用側とライブラリ共有が容易 | 言語境界が増える | 言語境界が増える |
 | 起動速度 | やや遅い（import）。デーモンで解決 | 速い（が Python 橋渡しで相殺） | 最速・単一バイナリ |
 | CLI UX | `typer`/`click` で十分 | `commander`/`oclif` | cobra/clap |
 | 配布 | `uv`（PEP 723）で自己完結 | npm | 単一バイナリ（API 自前実装が壁） |
@@ -29,7 +29,7 @@
 ┌─────────────────────────────────────────────┐
 │  CLI 層 (typer)   iterm2-cli <subcommand>     │  ← 人間向けエイリアス。薄い
 ├─────────────────────────────────────────────┤
-│  ライブラリ層（中核ロジック）iterm2_cli         │  ← オーケストレータ が import 可能
+│  ライブラリ層（中核ロジック）iterm2_cli         │  ← 外部から import 可能
 │   - SessionResolver (<target> 解決)           │
 │   - 各操作 (send/read/split/...)              │     ※ Adapter インターフェースにのみ依存
 │   - 送信作法・完了検知（状態機械）              │     （iterm2 pip を直接触らない）
@@ -49,14 +49,14 @@
 - **中核ロジックは `ITerm2Adapter` インターフェースにのみ依存**し、`iterm2` pip を直接触らない。本番は `RealAdapter`、テストは `FakeAdapter` を差す（ports & adapters / humble object）。→ §2.2。
 - **デーモン未起動なら CLI が自前で都度接続にフォールバック。** フェーズ1（都度接続）とフェーズ2（デーモン）を**同一コマンド表面**で両立。
 - **デーモンは接続ごとにスレッド処理**（head-of-line 回避）。長い `wait` が走っても他コマンドは即応する。RealAdapter は単一イベントループ上で呼び出しを直列化するためスレッド安全。
-- **ライブラリ層を オーケストレータ が import** することで、`オーケストレータ.py`/`(利用側スクリプト)` のアドホック制御を段階的に置換。
+- **ライブラリ層を外部の利用側が import** でき、各自のアドホックな iTerm2 制御を本 CLI に寄せられる。
 
 ### 2.1 レイテンシ対策（段階導入）
 > 実測（2026-06-15, [research.md](./research.md) §3.1）: it2api 都度接続は **cold 1.57s / warm 0.58s**。単発なら許容、高頻度バッチでは無視できず、デーモン化を裏付ける。
 
 - **フェーズ1（既定）**: it2api 同様コマンド毎に websocket 接続+認証。実装単純で正しさを担保。対話用途では実用範囲（warm ~0.6s）。
 - **フェーズ2（必要時）**: 接続を保持する常駐 `iterm2-cli daemon` を Unix socket で待受け、CLI は軽量クライアント。高頻度バッチ向け。
-  - **重要**: オーケストレータ の `オーケストレータ.py` は既に「接続を保持する常駐 Python」。**デーモンの実体を オーケストレータ に寄せる**（CLI がライブラリを提供、オーケストレータ がホスト）構成で二重管理を回避。`daemon` サブコマンドは単独利用時の選択肢として用意。
+  - 既に「接続を保持する常駐プロセス」を持つ利用側であれば、**デーモンの実体をその常駐プロセスに寄せ**（CLI がライブラリを提供、利用側がホスト）二重管理を避けられる。`daemon` サブコマンドは単独利用時の選択肢として用意。
 
 ### 2.2 テスタビリティ（adapter seam）
 iTerm2 は状態を持つ外部アプリで、実接続は遅く（cold 1.57s）不安定になりがち。これを**設計で吸収**する:
@@ -117,34 +117,34 @@ iTerm2 は状態を持つ外部アプリで、実接続は遅く（cold 1.57s）
 | `ping` | `system.ping` | — | 疎通確認 |
 
 > **target 指定の規則**: ペイロードを持つコマンド（send/send-key/var/set-status/set-progress）は `-t/--target`、対象のみのコマンド（read/busy/wait/split/focus/close）は位置引数。いずれも省略時 current、`-s/--session` で id 明示。
-> **notify は将来**: design 初版から外す（オーケストレータ は既に osascript 通知を持つ）。必要時に追加。
+> **notify は将来**: design 初版から外す。必要時に追加。
 
 > 検討余地（決定済）:
 > - **send/send-key の境界**: `send` に `--enter/-e` 糖衣を追加（本文送出→確定キーを順に送る）。send-key は維持。
 > - **busy の状態語彙**: `busy`/`needs-input`/`idle`/`unknown`。hook の語彙 `running/needs_input/idle/done` は変数値として吸収（running→busy, idle/done→idle）。
-> - **set-status/set-progress の写像**: **user 変数に書く（非破壊）**。`set-status <k> <v>`→`user.<k>`、状態は `user.itermcli_state`、進捗は `user.itermcli_progress`。セッション名は オーケストレータ の絵文字命名を壊さないため既定で触らない（バッジ反映は将来オプション）。
+> - **set-status/set-progress の写像**: **user 変数に書く（非破壊）**。`set-status <k> <v>`→`user.<k>`、状態は `user.itermcli_state`、進捗は `user.itermcli_progress`。セッション名は既存の命名（状態絵文字など）を壊さないため既定で触らない（バッジ反映は将来オプション）。
 > - **階層操作（move/reorder）・arrangement**: 本フェーズ対象外。必要時に Python API（`Arrangement.async_save/restore` 等）で追加。
 
 ---
 
-## 6. 送信作法（G6 / オーケストレータ 知見の内蔵）
+## 6. 送信作法（G6）
 
-オーケストレータ が `(利用側スクリプト)` で苦労した送信ノウハウをライブラリに内蔵:
+ペイン送信で踏みやすい落とし穴をライブラリに内蔵:
 - **本文と確定キーの分離**: `send`（本文）→ `send-key enter`（確定）。bracket-paste 中の早期 Enter を避ける。
-- **`/remote-control` 等パレット系**: 本文送出後にパレット表示を待つ遅延を入れてから確定（実測値は実装時に `(利用側スクリプト)` から転記）。
-- **UTF-8**: Python API は文字列を直接扱うため AppleScript のエスケープ問題（オーケストレータ の既知ハック）は発生しない。
+- **コマンドパレット系の TUI**: 本文送出後にパレット表示を待つ遅延を入れてから確定（遅延は対象 TUI に合わせる）。
+- **UTF-8**: Python API は文字列を直接扱うため AppleScript のエスケープ問題は発生しない。
 
 ---
 
 ## 7. 完了/busy 検知（G2 / cmux 知見）
 
 **実装方針（決定済）**: 状態を**セッション user 変数 `user.itermcli_state` に集約**して読む。書き手は複数あってよい:
-- エージェント/オーケストレータ hook が `iterm2-cli set-status itermcli_state running|needs-input|idle` で書く（最も正確）。
+- エージェント/hook が `iterm2-cli set-status itermcli_state running|needs-input|idle` で書く（最も正確）。
 - ペイン内から **OSC 1337 SetUserVar=itermcli_state=...** で書く（OSC 9/99/777 通知を直接購読する代わりに、変数へ集約できる）。
 
 `busy`/`wait` の判定優先順（`Controller._state`）:
 1. **`user.itermcli_state`**（あれば最優先。`running/busy`→busy, `needs_input`→needs-input, `idle/done`→idle）。
-2. **画面マーカー走査（フォールバック）**: "esc to interrupt" 等（オーケストレータ 現行方式）。脆いので最後段。
+2. **画面マーカー走査（フォールバック）**: "esc to interrupt" 等。脆いので最後段。
 
 > 実機確認済: 変数 running→busy / idle→idle を判定（[research](./research.md) 同様の手順で検証）。
 
@@ -152,43 +152,40 @@ iTerm2 は状態を持つ外部アプリで、実接続は遅く（cold 1.57s）
 
 ---
 
-## 8. オーケストレータ 統合方針
+## 8. 外部からの利用方法
 
-| 既存（オーケストレータ） | 統合後 |
-|---|---|
-| `(利用側スクリプト)`（busy 検知＋送信） | `iterm2_cli` の `send`/`send-key`/`busy`/`wait` を呼ぶ薄いラッパに |
-| `focus_pane.py` / `close_pane.py` | `iterm2_cli` の `focus`/`close` に置換 |
-| `オーケストレータ.py` のペイン制御 | ライブラリ層を import。`オーケストレータ.py` がデーモン実体をホスト |
-| `.state/window.json` の session_id↔task_id | label マッピング機構に寄せる（task_id をラベルとして登録） |
-| `notify_state.sh` | 状態源として busy/wait 検知に接続 |
+本 CLI は単体で完結し、外部の利用側は次の 3 経路のいずれでも統合できる:
 
-段階的置換: まずライブラリを切り出し、オーケストレータ の各スクリプトを 1 つずつ委譲に書き換える。一度に全置換しない。
+| 経路 | 使い方 | 向く場面 |
+|---|---|---|
+| **CLI** | `iterm2-cli <cmd>` をサブプロセス実行、`--json`/exit code で結果取得 | 言語非依存・単発 |
+| **ライブラリ** | `from iterm2_cli import Controller, RealAdapter` を import | Python の利用側・接続を使い回したい |
+| **デーモン + socket** | `iterm2-cli daemon` を常駐させ、CLI/独自クライアントが socket 経由 | 高頻度・低レイテンシ。利用側が常駐プロセスを持つなら実体をそこにホスト可 |
+
+状態報告（`set-status` / OSC 1337 SetUserVar で `user.itermcli_state` を書く）とラベル登録
+（`label set`）を使えば、利用側はペインを名前で識別し完了を待てる。
 
 ---
 
-## 9. リポジトリ構成（実装フェーズの想定）
+## 9. リポジトリ構成
 
 ```
 iterm2-cli/
-├── docs/                 requirements.md / design.md / research.md（本フェーズ成果物）
+├── docs/                 requirements.md / design.md / research.md
 ├── src/iterm2_cli/
-│   ├── __init__.py
 │   ├── cli.py            typer エントリ（薄い）
-│   ├── core.py           中核ロジック（Adapter にのみ依存）
-│   ├── adapter.py        ITerm2Adapter(port) / RealAdapter(iterm2 pip)
-│   ├── resolver.py       <target> 解決・label 管理
-│   ├── detect.py         busy/完了検知（hook/OSC/マーカー）
-│   ├── daemon.py         Unix socket サーバ（フェーズ2）
-│   └── client.py         socket クライアント
-├── tests/
-│   ├── fakes.py          FakeAdapter（インメモリ）
-│   ├── test_*.py         ユニット（FakeAdapter・高速）
-│   └── integration/      実 iTerm2 結合テスト（少数・要 iTerm2）
-├── pyproject.toml        uv プロジェクト（typer, iterm2 依存）
-└── README.md
+│   ├── core.py           Controller（中核ロジック・Adapter にのみ依存）
+│   ├── backend.py        Backend Protocol（Controller / DaemonClient の共通表面）
+│   ├── adapter.py        ITerm2Adapter(port) + SessionInfo
+│   ├── adapter_real.py   RealAdapter（iterm2 pip、async を単一ループに隔離）
+│   ├── resolver.py       <target> 解決      labels.py  ラベル永続化
+│   ├── detect.py         busy/完了検知       keys.py    send-key 符号化
+│   └── daemon.py / client.py / protocol.py  デーモン / クライアント / socket プロトコル
+├── tests/                ユニット（FakeAdapter）+ integration/（実 iTerm2・オプトイン）
+└── pyproject.toml        uv プロジェクト（typer 依存、iterm2 は optional extra）
 ```
 
-> 構成は実装フェーズで確定。単一スクリプト（PEP 723）から始め、規模に応じてパッケージ化する選択肢もある。core と adapter の分離（§2.2）は規模に関わらず維持する。
+> core と adapter の分離（§2.2）は維持する。
 
 ---
 
@@ -197,7 +194,5 @@ iterm2-cli/
 [requirements.md](./requirements.md) の受け入れ基準に対し、実装フェーズで:
 1. `uv run --with iterm2 -- it2api list-sessions` でレイテンシ実測（[research.md](./research.md) §3.1 に転記）→ G4/デーモンの優先度を数値で裏付け。
 2. `async_get_screen_contents` で他ペイン画面が読めるか・API 許可ダイアログ挙動。
-3. OSC 9/99/777 と `notify_state.sh` を組み合わせた完了検知の実証。
+3. `user.itermcli_state`（set-status / OSC 1337 SetUserVar）を読む完了検知の実証。
 4. `send`/`send-key` 分離で bracket-paste 問題が解消するか。
-
-いずれも可逆（2-way door）。不可逆操作（push/名前変更/credential/API 許可設定改変）は実行せず 管理者 に報告（オーケストレータ 不可逆操作 規約）。

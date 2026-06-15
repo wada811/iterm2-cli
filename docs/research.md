@@ -61,7 +61,7 @@ iterm2-cli の要件定義・設計の根拠となる調査記録。一次情報
   - **cold（依存キャッシュ後の初回・python 起動＋接続＋認証込み）: 1.57s**
   - **warm（2回目）: 0.58s**
 - 含意（G4）: **1 コマンドあたり概ね 0.6〜1.6s**。対話的な単発操作なら許容だが、高頻度バッチ（多数の send/read を連続）では無視できない。→ デーモン化（接続保持で接続/認証コストを償却）の優先度を裏付ける。
-- 補足: list-sessions の実出力でセッション名に状態絵文字（🔴/✳/⠂ 等）が入っており、オーケストレータ が「セッション名で状態表示」している実態が確認できた（本 CLI の `set-status` がこれを一般化）。
+- 補足: list-sessions の実出力でセッション名に状態を表す絵文字（🔴/✳/⠂ 等）を入れている例が観測でき、「セッション名で状態を表示する」運用が一般的と分かった（本 CLI の `set-status` はこれを変数ベースで一般化）。
 
 ---
 
@@ -91,31 +91,17 @@ iterm2-cli の要件定義・設計の根拠となる調査記録。一次情報
 
 ### 4.3 iterm2-cli に取り入れる知見
 1. **socket プロトコル形**: Unix socket + JSON `{id,method,params}`/`{id,ok,result}`、名前空間 method、CLI は薄いエイリアス（manaflow-ai）。
-2. **send / send-key 分離**: オーケストレータ の「本文送信→遅延→Enter」ハックを明快に置換（manaflow-ai）。
+2. **send / send-key 分離**: 「本文送信→遅延→Enter」を明快に置換（manaflow-ai）。
 3. **env による current 注入と `<target>` 省略 UX**（両 cmux）。
-4. **状態報告プリミティブ** `set-status`/`set-progress`/`log` → iTerm2 のセッション名/バッジ/変数に対応付け（オーケストレータ の絵文字名付けを一般化）。
+4. **状態報告プリミティブ** `set-status`/`set-progress`/`log` → iTerm2 のセッション名/バッジ/変数に対応付け。
 5. **OSC 9/99/777・hook イベント駆動の完了検知** を第一候補に、画面マーカー走査はフォールバック。
 6. **最小状態主義**（craigsc）: 永続化は session_id↔label の最小マッピングのみ。
 7. **動詞+対象・冪等・tab 補完**の UX（craigsc）。
 
----
+### 4.4 オーケストレーション系ツールに共通する既知の課題（一般知見）
 
-## 5. orchestrator の既存実装（一次情報・統合先）
-
-`~/orchestrator` が iTerm2 制御を既にアドホック実装。新 CLI はこれを再利用可能な基盤へ一本化する第一候補。
-
-| ファイル | 役割 | 実装 |
-|---|---|---|
-| `オーケストレータ.py` | メイン制御（ウィンドウ/タブ/ペイン管理、監視ループ） | iterm2 pip + asyncio。接続を保持する常駐プロセス |
-| `(利用側スクリプト)` | 実行中ペインへ送信（busy 検知あり） | 画面下部の "esc to interrupt" マーカー走査で busy 判定、`--force` で強制 |
-| `focus_pane.py` / `close_pane.py` | フォーカス / クローズ | iterm2 pip |
-| `hooks/notify_state.sh` | Claude hook から状態を `.state/<id>.json` に記録 | shell |
-| `.state/window.json` | window_id / 各 agent の session_id↔task_id を永続化 | JSON |
-
-既知のハック・課題:
-- AppleScript の UTF-8 エスケープ問題（JSON 不使用の手作りエスケープ）。
-- `/remote-control` 送信の bracket-paste 対策（本文と Enter を別 send、遅延）。
-- busy 判定は画面マーカー走査（脆い）→ 本 CLI で OSC/hook 駆動に置換余地。
-- `async_refresh()` 後でないと close 検知が遅延。
-
-→ **デーモンの実体は オーケストレータ.py 自身が既に担っている。** 本 CLI はライブラリ層を提供し、オーケストレータ がそれをホストする構成が二重管理を避ける。
+複数ペインを操る既存ツールに共通して観察される落とし穴。本 CLI はこれらを設計で回避する:
+- bracket-paste 中の早期 Enter → 本文と確定キーを分離（`send` / `send-key`）。
+- busy 判定を画面マーカー走査に頼ると脆い → user 変数（`set-status` / OSC 1337 SetUserVar）を第一に。
+- close 検知が `async_refresh()` の前だと遅延する → 列挙前に refresh。
+- AppleScript 経由の UTF-8 エスケープ問題 → Python API は文字列を直接扱うため発生しない。
