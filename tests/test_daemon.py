@@ -17,6 +17,7 @@ from iterm2_cli import cli, daemon as daemon_mod
 from iterm2_cli.client import DaemonClient, DaemonError
 from iterm2_cli.core import Controller
 from iterm2_cli.daemon import Daemon, is_alive
+from iterm2_cli.detect import State
 from iterm2_cli.resolver import SessionResolver
 from tests.fakes import FakeAdapter
 
@@ -87,6 +88,32 @@ def test_label_resolution_on_client_side(running_daemon):
     client = DaemonClient(sockp, SessionResolver(labels={"a": A}))
     client.send("a", "yo")  # ラベルはクライアントが解決して具体 id を送る
     assert fa._get(A).sent == ["yo"]
+
+
+def test_long_wait_does_not_block_other_commands(running_daemon):
+    # busy のままのセッションで wait（タイムアウトまでブロック）を投げつつ、
+    # 別接続の ping が即応することを確認（接続ごとスレッド処理 = HOL 回避）。
+    fa, sockp, *_ = running_daemon
+    fa._get(A).screen = ["esc to interrupt"]  # ずっと busy
+
+    waiter = DaemonClient(sockp, SessionResolver())
+
+    def do_wait():
+        try:
+            waiter.wait(session=A, until=State.IDLE, timeout=1.5, poll_interval=0.05)
+        except DaemonError:
+            pass  # wait_timeout を error で受ける
+
+    th = threading.Thread(target=do_wait, daemon=True)
+    th.start()
+    time.sleep(0.2)  # wait が走行中であることを担保
+
+    pinger = DaemonClient(sockp, SessionResolver())
+    t0 = time.perf_counter()
+    pinger._rpc("system.ping", {})
+    elapsed = time.perf_counter() - t0
+    assert elapsed < 0.8, f"ping が wait に塞がれている: {elapsed:.2f}s"
+    th.join(timeout=3)
 
 
 def test_stop_daemon(running_daemon):

@@ -16,6 +16,7 @@ from typing import Optional
 
 import typer
 
+from .backend import Backend
 from .core import Controller
 from .detect import State
 from .labels import LabelStore
@@ -28,7 +29,7 @@ app.add_typer(var_app, name="var")
 app.add_typer(label_app, name="label")
 
 
-def make_controller():
+def make_controller() -> "Backend":
     """操作のバックエンドを組み立てる。
 
     デーモンが生きていれば軽量な DaemonClient（socket 経由・低レイテンシ）を、
@@ -209,10 +210,10 @@ def close(
 @var_app.command("get")
 def var_get(
     name: str = typer.Argument(...),
-    target: Optional[str] = typer.Argument(None),
+    target: Optional[str] = typer.Option(None, "-t", "--target"),
     session: Optional[str] = typer.Option(None, "-s", "--session"),
 ):
-    def run(c: Controller):
+    def run(c):
         value = c.var_get(target, name, session=session)
         if value is not None:
             typer.echo(value)

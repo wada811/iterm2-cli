@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import socket
+import threading
 from pathlib import Path
 
 from .core import Controller
@@ -74,10 +75,15 @@ class Daemon:
                     conn, _ = self._sock.accept()
                 except OSError:
                     break  # close() により叩き起こされた
-                with conn:
-                    self._handle(conn)
+                # 接続ごとにスレッド処理。長い wait が他コマンドを塞がない（HOL 回避）。
+                # RealAdapter は単一イベントループ上で呼び出しを直列化するためスレッド安全。
+                threading.Thread(target=self._serve_conn, args=(conn,), daemon=True).start()
         finally:
             self._cleanup()
+
+    def _serve_conn(self, conn: socket.socket) -> None:
+        with conn:
+            self._handle(conn)
 
     def stop(self) -> None:
         """別スレッド/シグナルから安全に停止する。"""
@@ -99,7 +105,7 @@ class Daemon:
             return
         if request.get("method") == "system.stop":
             conn.sendall(encode({"id": request.get("id", ""), "ok": True, "result": {"stopping": True}}))
-            self._stop = True
+            self.stop()  # accept() を中断して serve ループを抜けさせる
             return
         conn.sendall(encode(dispatch(self.controller, request)))
 

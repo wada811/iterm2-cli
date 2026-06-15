@@ -45,8 +45,10 @@
 ```
 
 - **CLI サブコマンドは socket method と 1:1 対応**（cmux 踏襲）。CLI はライブラリ/デーモンへの薄いクライアント。
+- **`Backend` Protocol**（`backend.py`）が操作表面を定義し、`Controller`（都度接続）と `DaemonClient`（socket）が共に満たす。`make_controller()` は `Backend` を返し、両者を透過的に差し替える。runtime_checkable によりテストで両実装の表面一致を担保（ドリフト検出）。
 - **中核ロジックは `ITerm2Adapter` インターフェースにのみ依存**し、`iterm2` pip を直接触らない。本番は `RealAdapter`、テストは `FakeAdapter` を差す（ports & adapters / humble object）。→ §2.2。
 - **デーモン未起動なら CLI が自前で都度接続にフォールバック。** フェーズ1（都度接続）とフェーズ2（デーモン）を**同一コマンド表面**で両立。
+- **デーモンは接続ごとにスレッド処理**（head-of-line 回避）。長い `wait` が走っても他コマンドは即応する。RealAdapter は単一イベントループ上で呼び出しを直列化するためスレッド安全。
 - **ライブラリ層を オーケストレータ が import** することで、`オーケストレータ.py`/`(利用側スクリプト)` のアドホック制御を段階的に置換。
 
 ### 2.1 レイテンシ対策（段階導入）
@@ -108,12 +110,14 @@ iTerm2 は状態を持つ外部アプリで、実接続は遅く（cold 1.57s）
 | `close <target> [--force]` | `session.close` | target,force | ペイン/タブ閉鎖（`async_close`） |
 | `var get <target> <name>` | `session.get_var` | target,name | 変数取得（`async_get_variable`） |
 | `var set <target> <name> <value>` | `session.set_var` | target,name,value | 変数設定（`async_set_variable`） |
-| `set-status <target> <key> <value> [--icon I --color C]` | `session.set_status` | target,key,value,icon,color | 状態 pill → セッション名/バッジ/ユーザー変数に反映 |
-| `set-progress <target> <n>` | `session.set_progress` | target,n | 進捗 → 同上 |
-| `notify [--title T --body B] [--target t]` | `notify.create` | title,body,target | 通知（OSC9 / osascript フォールバック） |
-| `label set <target> <name>` / `label ls` / `label rm <name>` | `session.label.*` | — | ラベル↔session_id マッピング管理 |
-| `daemon [--socket PATH]` | — | — | 常駐起動 |
+| `set-status -t <target> <key> <value>` | （`session.set_var` の糖衣）| key,value | `user.<key>` に書く（非破壊）。状態は `itermcli_state` |
+| `set-progress -t <target> <n>` | （`session.set_var` の糖衣）| n | `user.itermcli_progress` に書く |
+| `label set <name> <session_id>` / `label ls` / `label rm <name>` | （ローカル）| — | ラベル↔session_id マッピング管理（iTerm2 不要）|
+| `daemon [--socket PATH] [--stop]` | `system.stop` | — | 常駐起動／停止 |
 | `ping` | `system.ping` | — | 疎通確認 |
+
+> **target 指定の規則**: ペイロードを持つコマンド（send/send-key/var/set-status/set-progress）は `-t/--target`、対象のみのコマンド（read/busy/wait/split/focus/close）は位置引数。いずれも省略時 current、`-s/--session` で id 明示。
+> **notify は将来**: design 初版から外す（オーケストレータ は既に osascript 通知を持つ）。必要時に追加。
 
 > 検討余地（決定済）:
 > - **send/send-key の境界**: `send` に `--enter/-e` 糖衣を追加（本文送出→確定キーを順に送る）。send-key は維持。

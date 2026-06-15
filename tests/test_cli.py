@@ -104,7 +104,7 @@ def test_focus_and_close(fake):
 
 def test_var_set_get(fake):
     assert runner.invoke(cli.app, ["var", "set", "user.k", "v", "-t", "a"]).exit_code == 0
-    r = runner.invoke(cli.app, ["var", "get", "user.k", "a"])
+    r = runner.invoke(cli.app, ["var", "get", "user.k", "-t", "a"])
     assert r.stdout.strip() == "v"
 
 
