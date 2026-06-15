@@ -21,18 +21,50 @@ it2api の全操作網羅は段階的に進め、まず **it2api で埋まらな
 
 ## ステータス
 
-要件定義・設計フェーズ。実装は次フェーズ。
+**フェーズ1（都度接続 MVP）実装済み。** ライブラリ層＋CLI が動作し、実 iTerm2 に対し
+list/send/send-key/read/split/tab/focus/close/var が通る。フェーズ2（デーモン）は未実装。
 
 | ドキュメント | 内容 |
 |---|---|
 | [docs/requirements.md](./docs/requirements.md) | 要求定義（ユースケース）・要件定義（FR/NFR）・it2api ギャップ分析・受け入れ基準 |
 | [docs/design.md](./docs/design.md) | 言語選定（Python）・3層アーキ・コマンド表面×socket method 完全仕様・送信作法・完了検知・オーケストレータ 統合 |
 | [docs/research.md](./docs/research.md) | iTerm2 制御手段比較・it2api・cmux 知見・オーケストレータ 既存実装の調査記録 |
+| [CLAUDE.md](./CLAUDE.md) | 作業ガイド（開発手順・送信規約・設計不変条件・テスト戦略・オーケストレータ 規約） |
+
+## 使い方
+
+iTerm2 が起動し API（Settings > General > Magic > Enable Python API）が有効な前提。
+依存 `iterm2` は optional extra。`uv` で隔離実行する（グローバル pip 汚染なし）:
+
+```sh
+# 実 iTerm2 を操作するコマンド（--extra iterm2 が必要）
+uv run --extra iterm2 iterm2-cli list --json          # セッション/ペイン一覧
+uv run --extra iterm2 iterm2-cli send "echo hi" -t worker   # 本文送信（対象はラベル/ -s id / 省略時 current）
+uv run --extra iterm2 iterm2-cli send-key enter -t worker   # 確定キー
+uv run --extra iterm2 iterm2-cli read --tail 20            # current ペインの末尾20行
+uv run --extra iterm2 iterm2-cli busy worker                # busy なら exit 1
+uv run --extra iterm2 iterm2-cli split -v                  # 分割し新 session_id を出力
+uv run --extra iterm2 iterm2-cli tab --cmd "claude"        # 新タブで起動
+
+# ラベル（session_id↔名前の最小マッピング、iTerm2 不要）
+uv run iterm2-cli label set worker <session_id>
+```
+
+`<target>` 解決順は `--session/-s <id>` → ラベル → `$ITERM_SESSION_ID`（current）。
+
+## 開発
+
+```sh
+uv run pytest                                   # ユニット（FakeAdapter・iTerm2 不要）
+ITERM2_CLI_INTEGRATION=1 uv run --extra iterm2 pytest tests/integration   # 実 iTerm2 結合（オプトイン）
+```
+
+中核ロジックは `ITerm2Adapter`(port) にのみ依存し、テストは `FakeAdapter` を差し込む（[CLAUDE.md](./CLAUDE.md) のテスト戦略）。
 
 ## 今後の段階計画
 
-1. **フェーズ1**: ライブラリ層＋都度接続の CLI（list/send/send-key/read/busy/wait/split/tab/focus/close/var）。
+1. ~~**フェーズ1**: ライブラリ層＋都度接続の CLI~~（実装済み）。
 2. **フェーズ2**: 任意デーモン（Unix socket、低レイテンシ）。実体は オーケストレータ にホストさせる構成を軸に。
 3. **段階的統合**: オーケストレータ の `(利用側スクリプト)` 等を本ライブラリへの委譲に置換。
 
-言語は Python、依存は `uv`（PEP 723）で自己完結。
+言語は Python、依存は `uv` で自己完結。
