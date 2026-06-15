@@ -201,3 +201,16 @@ iterm2-cli/
   create→send→read→close と var/split/activate/list を使い捨てウィンドウで実機確認。
 - **レイテンシ**: 都度接続 cold 1.57s / warm 0.58s、デーモン経由 list ≈ 5ms（[research.md](./research.md) §3.1）。
 - **並行性**: デーモンへ 8 スレッド×並行 RPC を 0 errors で実機確認。
+
+---
+
+## 11. 既知の制限・将来の改善
+
+実害が小さく据え置いている項目。実運用で必要になったら着手する（鮮度を保つため最小限に記す）。
+
+- **デーモン経由 `wait` のクライアント無タイムアウト**: デーモンが応答も切断もせず固まると無限待ち（kill 時は接続断で即整形済みエラー）。必要なら socket に wait+余裕のタイムアウトを設定。
+- **デーモンの可観測性**: ログ／PID ファイルが無くデバッグしづらい。`--log` 任意・PID 出力で改善可。
+- **socket cleanup の TOCTOU**: 同一パスへ複数デーモンを並走起動すると稀に socket ファイルを取り違える（is_alive ガードはあるが非アトミック）。
+- **結合テストの穴**: `tab`（現ウィンドウ版）・`wait`（実 busy→idle 遷移）は実機未被覆。
+- **it2api 全操作の網羅**: profile / arrangement / tmux / 各種 monitor は未実装（完全代替は段階的）。階層操作（move/reorder）も未実装。
+- **公開時の整備**: LICENSE・`pyproject` メタデータ（authors / urls / classifiers）。

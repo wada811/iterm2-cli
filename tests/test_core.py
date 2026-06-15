@@ -55,6 +55,34 @@ def test_read_tail():
     assert c.read(A, tail=2) == ["l2", "l3"]
 
 
+def test_read_trims_trailing_blank_lines():
+    fa, c = make()
+    # 内容は上部、下部は空行。trim 後に tail を当てるので内容が残る。
+    fa._get(A).screen = ["hello", "world", "", "   ", ""]
+    assert c.read(A) == ["hello", "world"]
+    assert c.read(A, tail=1) == ["world"]
+
+
+def test_busy_markers_configurable_via_env(monkeypatch):
+    monkeypatch.setenv("ITERM2_CLI_BUSY_MARKERS", "Running tests,compiling")
+    fa = FakeAdapter()
+    fa.add_session(A, "pane-a")
+    c = Controller(fa, SessionResolver())  # env を読む
+    fa._get(A).screen = ["...compiling..."]
+    assert c.busy(A) == State.BUSY
+    # 既定マーカー（esc to interrupt）は上書きされたので busy 扱いにならない
+    fa._get(A).screen = ["esc to interrupt"]
+    assert c.busy(A) == State.IDLE
+
+
+def test_busy_markers_explicit_arg():
+    fa = FakeAdapter()
+    fa.add_session(A, "pane-a")
+    c = Controller(fa, SessionResolver(), busy_markers=("WORKING",))
+    fa._get(A).screen = ["WORKING hard"]
+    assert c.busy(A) == State.BUSY
+
+
 def test_busy_classifies():
     fa, c = make()
     fa._get(A).screen = ["esc to interrupt"]

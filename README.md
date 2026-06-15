@@ -56,7 +56,7 @@ iterm2 wait                   # current が idle になるまで待つ
 | `list [--json]` | ペイン階層を列挙（session_id / name / 行列 / is_active） | `iterm2 list --json` |
 | `send <text> [-t T] [-e]` | 本文を送信。`-e/--enter` で確定キーも送る | `iterm2 send "ls" -t worker -e` |
 | `send-key <keys...> [-t T]` | 特殊キー送出（enter/tab/esc/up/down/left/right/ctrl-c …） | `iterm2 send-key ctrl-c -t worker` |
-| `read [T] [--tail N] [--json]` | 画面内容を読む | `iterm2 read --tail 40 --json` |
+| `read [T] [--tail N] [--json]` | 画面内容を読む（末尾の空行は除去してから `--tail` を適用） | `iterm2 read --tail 40 --json` |
 | `busy [T] [--json]` | 状態判定。**busy のとき exit 1** | `iterm2 busy worker && echo idle` |
 | `wait [T] [--timeout S] [--until S]` | 指定状態（既定 idle）まで待つ | `iterm2 wait -s <id> --timeout 120` |
 | `split [T] [-h] [--profile P]` | 分割し新 session_id を出力（既定は垂直、`-h` で水平） | `iterm2 split -h` |
@@ -105,6 +105,9 @@ printf '\033]1337;SetUserVar=itermcli_state=%s\a' "$(printf running | base64)"
 ```
 
 語彙: `running`/`busy`→busy、`needs_input`/`needs-input`→needs-input、`idle`/`done`→idle。
+
+変数が無いときの画面マーカー（フォールバック）の既定は `"esc to interrupt"`。別の TUI に合わせるには
+環境変数 `ITERM2_CLI_BUSY_MARKERS` / `ITERM2_CLI_NEEDS_INPUT_MARKERS`（改行/カンマ区切り）で上書きする。
 
 ---
 
