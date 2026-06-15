@@ -1,88 +1,190 @@
 # iterm2-cli
 
-iTerm2 をスクリプト / AI エージェントから操作する CLI。
+iTerm2 をスクリプト / AI エージェントから操作する CLI。ペインの列挙・テキスト送信・画面読み取り・
+分割・状態待ち（完了検知）などを、機械可読（`--json` / exit code）で提供する。
 
-複数の Claude Code ペインをオーケストレーションする [orchestrator](../orchestrator) のペイン制御を、再利用可能な基盤（ライブラリ＋CLI）へ一本化することを主目的とする。
+主用途は、複数の Claude Code ペインをオーケストレーションする
+[orchestrator](../orchestrator) のペイン制御を、再利用可能な基盤
+（ライブラリ＋CLI＋任意デーモン）へ一本化すること。
 
-## 位置付け（it2api との差別化）
+---
 
-iTerm2 には同梱 CLI `it2api` があり、`iterm2` Python API のほぼ全操作（列挙・送信・分割・画面取得・変数 等）を既に CLI 化している。ただし it2api はその Python API の薄いラッパに過ぎず特権機能を持たないため、**本 CLI は同じ Python API を直接叩いて it2api を完全代替する**ことを目標とする（it2api へのシェルアウト＝実行時依存はゼロ。it2api は移植元リファレンスとして残す）。
+## クイックスタート
 
-it2api の全操作網羅は段階的に進め、まず **it2api で埋まらないギャップに価値を集中**する:
+前提: iTerm2 が起動し、**Python API が有効**（Settings → General → Magic → Enable Python API）。
+依存 `iterm2` は optional extra。`uv` で隔離実行する（グローバル汚染なし）。
 
-- 永続的なペイン識別（ラベル / 再起動跨ぎ）
-- 高レベル操作（完了待ち `wait` / busy 検知 / リトライ）
-- 構造化出力（全コマンド `--json`）
-- 送信作法（本文 `send` と確定キー `send-key` の分離・bracket-paste 安全）
-- 状態報告（`set-status` / `set-progress`）
-- 低レイテンシ（任意のデーモン化）
+```sh
+uv run --extra iterm2 iterm2-cli list --json            # ペイン一覧（JSON）
+uv run --extra iterm2 iterm2-cli send "echo hi" -e      # current ペインに送信＋Enter
+uv run --extra iterm2 iterm2-cli read --tail 20         # current ペインの末尾20行
+uv run --extra iterm2 iterm2-cli wait                   # current が idle になるまで待つ
+```
 
-設計は先行ツール cmux（manaflow-ai / craigsc）の知見を取り入れている。
+高頻度に使うならデーモンを起動（接続を保持し **1コマンド ~5ms**、後述）。
 
-## ステータス
+---
 
-**フェーズ1（都度接続 MVP）＋フェーズ2（デーモン）実装済み。** ライブラリ層＋CLI が動作し、
-実 iTerm2 に対し list/send/send-key/read/split/tab/focus/close/var が通る。デーモン起動時は
-Unix socket 経由で動作し、未起動時は都度接続に自動フォールバックする（同一コマンド表面）。
+## コマンドリファレンス
 
-| ドキュメント | 内容 |
+`<target>`（対象ペイン）の指定は次の規則:
+
+- **ペイロードを持つコマンド**（send / send-key / var / set-status / set-progress）→ `-t/--target`
+- **対象のみのコマンド**（read / busy / wait / split / focus / close）→ 位置引数
+- いずれも **省略時は current**（`$ITERM_SESSION_ID`）。`-s/--session <id>` で session_id を直接指定。
+- `<target>` 解決順: `-s <id>` → ラベル → current。
+
+| コマンド | 説明 | 例 |
+|---|---|---|
+| `list [--json]` | ペイン階層を列挙（session_id / name / 行列 / is_active） | `iterm2-cli list --json` |
+| `send <text> [-t T] [-e]` | 本文を送信。`-e/--enter` で確定キーも送る | `iterm2-cli send "ls" -t worker -e` |
+| `send-key <keys...> [-t T]` | 特殊キー送出（enter/tab/esc/up/down/left/right/ctrl-c …） | `iterm2-cli send-key ctrl-c -t worker` |
+| `read [T] [--tail N] [--json]` | 画面内容を読む | `iterm2-cli read --tail 40 --json` |
+| `busy [T] [--json]` | 状態判定。**busy のとき exit 1** | `iterm2-cli busy worker && echo idle` |
+| `wait [T] [--timeout S] [--until S]` | 指定状態（既定 idle）まで待つ | `iterm2-cli wait -s <id> --timeout 120` |
+| `split [T] [-h] [--profile P]` | 分割し新 session_id を出力（既定は垂直、`-h` で水平） | `iterm2-cli split -h` |
+| `tab [--cmd C] [--window] [--profile P]` | タブ（`--window` で新窓）を作り新 session_id を出力 | `iterm2-cli tab --cmd claude` |
+| `focus [T]` | フォーカス移動 | `iterm2-cli focus worker` |
+| `close [T] [--force]` | ペイン/タブを閉じる | `iterm2-cli close -s <id> --force` |
+| `var get <name> [-t T]` / `var set <name> <value> [-t T]` | セッション変数 | `iterm2-cli var get user.x -t worker` |
+| `set-status <key> <value> [-t T]` | 状態を `user.<key>` に書く（後述） | `iterm2-cli set-status itermcli_state running` |
+| `set-progress <n> [-t T]` | 進捗を `user.itermcli_progress` に書く | `iterm2-cli set-progress 42` |
+| `label set <name> <id>` / `label ls [--json]` / `label rm <name>` | ラベル↔session_id（iTerm2 不要） | `iterm2-cli label set worker <id>` |
+| `daemon [--socket P] [--stop]` | 常駐デーモン起動／停止 | `iterm2-cli daemon` |
+| `ping` | 接続確認（`ok` を出力） | `iterm2-cli ping` |
+
+### exit code
+
+| code | 意味 |
 |---|---|
-| [docs/requirements.md](./docs/requirements.md) | 要求定義（ユースケース）・要件定義（FR/NFR）・it2api ギャップ分析・受け入れ基準 |
-| [docs/design.md](./docs/design.md) | 言語選定（Python）・3層アーキ・コマンド表面×socket method 完全仕様・送信作法・完了検知・オーケストレータ 統合 |
-| [docs/research.md](./docs/research.md) | iTerm2 制御手段比較・it2api・cmux 知見・オーケストレータ 既存実装の調査記録 |
-| [CLAUDE.md](./CLAUDE.md) | 作業ガイド（開発手順・送信規約・設計不変条件・テスト戦略・オーケストレータ 規約） |
+| 0 | 成功 |
+| 1 | `busy`=busy のとき / `label rm`=該当なし / `daemon`=既に起動中 |
+| 2 | エラー（対象解決不可・セッション不在・未知キー・デーモンエラー・接続失敗）。stderr に 1 行 |
 
-## 使い方
+### `--json` 出力の形
 
-iTerm2 が起動し API（Settings > General > Magic > Enable Python API）が有効な前提。
-依存 `iterm2` は optional extra。`uv` で隔離実行する（グローバル pip 汚染なし）:
+| コマンド | 形 |
+|---|---|
+| `list --json` | `[{"session_id","name","rows","cols","tab_id","window_id","is_active"}, …]` |
+| `read --json` | `{"lines": ["…", …]}` |
+| `busy --json` | `{"state": "busy" \| "idle" \| "needs-input" \| "unknown"}` |
+| `label ls --json` | `{"<label>": "<session_id>", …}` |
 
-```sh
-# 実 iTerm2 を操作するコマンド（--extra iterm2 が必要）
-uv run --extra iterm2 iterm2-cli list --json          # セッション/ペイン一覧
-uv run --extra iterm2 iterm2-cli send "echo hi" -t worker   # 本文送信（対象はラベル/ -s id / 省略時 current）
-uv run --extra iterm2 iterm2-cli send "echo hi" -t worker -e   # 本文＋Enter（--enter）
-uv run --extra iterm2 iterm2-cli send-key enter -t worker   # 確定キー
-uv run --extra iterm2 iterm2-cli wait -t worker             # 完了(idle)まで待つ
-uv run --extra iterm2 iterm2-cli set-status itermcli_state running   # 状態報告（busy/wait が読む）
-uv run --extra iterm2 iterm2-cli read --tail 20            # current ペインの末尾20行
-uv run --extra iterm2 iterm2-cli busy worker                # busy なら exit 1
-uv run --extra iterm2 iterm2-cli split -v                  # 分割し新 session_id を出力
-uv run --extra iterm2 iterm2-cli tab --cmd "claude"        # 新タブで起動
+---
 
-# ラベル（session_id↔名前の最小マッピング、iTerm2 不要）
-uv run iterm2-cli label set worker <session_id>
-```
+## 状態報告と完了検知（エージェント向け）
 
-`<target>` 解決順は `--session/-s <id>` → ラベル → `$ITERM_SESSION_ID`（current）。
-
-### デーモン（低レイテンシ）
-
-都度接続は 1 コマンド ~0.6〜1.6s かかる（websocket 接続+認証）。高頻度操作はデーモンを起動すると
-接続を保持し、各コマンドは Unix socket 経由になる（**実測 list ≈ 5ms**）:
+`busy` / `wait` はセッション変数 **`user.itermcli_state`** を最優先で読み、無ければ画面マーカー
+（"esc to interrupt" 等）にフォールバックする。エージェントは自分の状態をこの変数に書けば、
+オーケストレータが確実に完了検知できる。書き方は 2 通り:
 
 ```sh
-uv run --extra iterm2 iterm2-cli daemon        # 常駐起動（Ctrl-C で停止）
-uv run --extra iterm2 iterm2-cli daemon --stop # 停止
+# 1) CLI から（外部 / hook）
+iterm2-cli set-status itermcli_state running   # busy 扱い
+iterm2-cli set-status itermcli_state idle       # idle 扱い
+
+# 2) ペイン内から OSC 1337（シェル/プログラムが直接）
+printf '\033]1337;SetUserVar=itermcli_state=%s\a' "$(printf running | base64)"
 ```
 
-デーモン起動中はクライアント側に iterm2 パッケージは不要（`uv run iterm2-cli list` だけで socket 経由）。
-`<target>` の current 解決はクライアント側で行うため、デーモンが別プロセスでも各ペインの current は正しく解決される。
-socket パスは `ITERM2_CLI_SOCKET`（既定 `/tmp/iterm2-cli.sock`）。
+語彙: `running`/`busy`→busy、`needs_input`/`needs-input`→needs-input、`idle`/`done`→idle。
+
+---
+
+## デーモン（低レイテンシ）
+
+都度接続は 1 コマンド ~0.6〜1.6s（websocket 接続+認証）。高頻度操作はデーモンを起動すると
+接続を保持し、各コマンドは Unix socket 経由になる（**実測 list ≈ 5ms**）。
+
+```sh
+uv run --extra iterm2 iterm2-cli daemon         # 常駐起動（Ctrl-C で停止）
+uv run --extra iterm2 iterm2-cli daemon --stop  # 停止
+```
+
+- デーモン起動中は**クライアントに iterm2 パッケージ不要**（`uv run iterm2-cli list` だけで socket 経由）。
+- CLI はデーモンの有無を自動判定し、未起動なら都度接続にフォールバック（**同一コマンド表面**）。
+- `<target>` の current 解決はクライアント側で行うため、デーモンが別プロセスでも各ペインの current を正しく解決。
+- 接続ごとにスレッド処理するため、長い `wait` が他コマンドを塞がない。
+- socket パスは `ITERM2_CLI_SOCKET`（既定 `/tmp/iterm2-cli.sock`、パーミッション 0600）。
+
+---
+
+## アーキテクチャ（俯瞰）
+
+3 層 + テスタビリティの継ぎ目。詳細は [docs/design.md](./docs/design.md)。
+
+```
+CLI (typer)  ─┐
+              ├─►  Backend（共通表面: Controller / DaemonClient）
+ライブラリ ────┘         │ 中核ロジックは ITerm2Adapter にのみ依存
+                         ▼
+              ITerm2Adapter(port) ─┬─ RealAdapter (iterm2 pip, async を単一ループに隔離)
+                                   └─ FakeAdapter (テスト用インメモリ)
+```
+
+- **CLI は薄いクライアント**。操作の実体はライブラリ（`Controller`）。
+- **`Backend` Protocol** を `Controller`（都度接続）と `DaemonClient`（socket）が共に満たす。
+- **`ITerm2Adapter` port** が iTerm2 接続を抽象化。本番=`RealAdapter`、テスト=`FakeAdapter`。
+  → iTerm2 無しでユニットテストが回り、async/websocket は RealAdapter 内に閉じる。
+
+### ライブラリとして使う
+
+```python
+from iterm2_cli import Controller, RealAdapter, SessionResolver, State
+
+c = Controller(RealAdapter.connect(), SessionResolver())
+try:
+    for s in c.list():
+        print(s.session_id, s.name)
+    c.send(None, "echo hi", session="<id>")
+finally:
+    c.shutdown()
+```
+
+---
+
+## リポジトリ構成
+
+| パス | 役割 |
+|---|---|
+| `src/iterm2_cli/cli.py` | typer エントリ（薄い） |
+| `src/iterm2_cli/core.py` | `Controller`（中核操作） |
+| `src/iterm2_cli/backend.py` | `Backend` Protocol（共通表面） |
+| `src/iterm2_cli/adapter.py` / `adapter_real.py` | port と RealAdapter（iterm2 pip） |
+| `src/iterm2_cli/resolver.py` / `labels.py` | `<target>` 解決 / ラベル永続化 |
+| `src/iterm2_cli/detect.py` | busy/完了検知 |
+| `src/iterm2_cli/keys.py` | send-key 符号化 |
+| `src/iterm2_cli/daemon.py` / `client.py` / `protocol.py` | デーモン / クライアント / socket プロトコル |
+| `tests/` | ユニット（FakeAdapter）／`tests/integration/`（実 iTerm2・オプトイン） |
+| `docs/` | [requirements](./docs/requirements.md) / [design](./docs/design.md) / [research](./docs/research.md) |
+| [CLAUDE.md](./CLAUDE.md) | 開発ガイド（手順・設計不変条件・テスト戦略・オーケストレータ 規約） |
+
+---
 
 ## 開発
 
 ```sh
-uv run pytest                                   # ユニット（FakeAdapter・iTerm2 不要）
-ITERM2_CLI_INTEGRATION=1 uv run --extra iterm2 pytest tests/integration   # 実 iTerm2 結合（オプトイン）
+uv run pytest                                                          # ユニット（iTerm2 不要）
+uv run ruff check src tests                                            # lint（F/B/I）
+ITERM2_CLI_INTEGRATION=1 uv run --extra iterm2 pytest tests/integration  # 実 iTerm2 結合（オプトイン）
 ```
 
-中核ロジックは `ITerm2Adapter`(port) にのみ依存し、テストは `FakeAdapter` を差し込む（[CLAUDE.md](./CLAUDE.md) のテスト戦略）。
+開発の進め方・設計不変条件・テスト戦略（Canon TDD / adapter seam）は [CLAUDE.md](./CLAUDE.md) を参照。
 
-## 今後の段階計画
+---
 
-1. ~~**フェーズ1**: ライブラリ層＋都度接続の CLI~~（実装済み）。
-2. ~~**フェーズ2**: 任意デーモン（Unix socket、低レイテンシ）~~（実装済み）。
-3. **段階的統合**: オーケストレータ の `(利用側スクリプト)` 等を本ライブラリへの委譲に置換。デーモン実体を オーケストレータ にホストさせる。
+## 位置付け（it2api との関係）
 
-言語は Python、依存は `uv` で自己完結。
+iTerm2 同梱の `it2api` も `iterm2` Python API のほぼ全操作を CLI 化している。it2api はその API の
+薄いラッパに過ぎず特権機能を持たないため、**本 CLI は同じ Python API を直接叩いて it2api を完全代替する**
+ことを目標とする（it2api へのシェルアウト＝実行時依存はゼロ。移植元リファレンスとして残す）。
+
+it2api で埋まらないギャップ — 永続的なペイン識別（ラベル）、高レベル操作（`wait`/busy 検知）、
+構造化出力（`--json`）、送信作法（send / send-key 分離・bracket-paste 安全）、状態報告
+（`set-status`）、低レイテンシ（デーモン）— に価値を集中する。設計は先行ツール cmux
+（manaflow-ai / craigsc）の知見を取り入れている。
+
+## ステータス
+
+フェーズ1（都度接続）＋フェーズ2（デーモン）実装済み。次は オーケストレータ 統合（`(利用側スクリプト)` 等を
+本ライブラリ委譲へ置換し、デーモン実体を オーケストレータ にホスト）。詳細は [docs/requirements.md](./docs/requirements.md)。
