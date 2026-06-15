@@ -45,9 +45,21 @@ class ITerm2Adapter(abc.ABC):
 
     @abc.abstractmethod
     def create_tab(
-        self, *, profile: str | None = None, command: str | None = None, new_window: bool = False
+        self,
+        *,
+        profile: str | None = None,
+        command: str | None = None,
+        new_window: bool = False,
+        window_id: str | None = None,
     ) -> str:
-        """新しいタブ（または new_window でウィンドウ）を作り、新 session_id を返す。"""
+        """新しいタブ（または new_window でウィンドウ）を作り、新 session_id を返す。
+
+        window_id 指定時はその既存ウィンドウ内にタブを作る（無ければ SessionNotFound）。
+        """
+
+    @abc.abstractmethod
+    def set_name(self, session_id: str, name: str) -> None:
+        """セッション（ペイン）の表示名を設定する。"""
 
     @abc.abstractmethod
     def activate(self, session_id: str) -> None:

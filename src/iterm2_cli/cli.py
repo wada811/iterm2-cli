@@ -56,6 +56,7 @@ def _run(fn):
     """
     from .adapter import SessionNotFound
     from .client import DaemonError
+    from .detect import WaitTimeout
     from .keys import UnknownKey
 
     try:
@@ -73,6 +74,9 @@ def _run(fn):
         raise typer.Exit(2) from None
     except UnknownKey as e:
         typer.secho(f"未知のキー: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(2) from None
+    except WaitTimeout as e:
+        typer.secho(f"待機がタイムアウトしました: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(2) from None
     except DaemonError as e:
         typer.secho(f"デーモンエラー: {e}", fg=typer.colors.RED, err=True)
@@ -171,10 +175,17 @@ def wait(
     target: str | None = typer.Argument(None),
     timeout: float = typer.Option(30.0, "--timeout"),
     until: State = typer.Option(State.IDLE, "--until"),
+    until_text: str | None = typer.Option(None, "--until-text", help="画面にこの文字列が出るまで待つ"),
     session: str | None = typer.Option(None, "-s", "--session"),
 ):
-    """対象が指定状態（既定 idle）になるまで待つ。"""
-    _run(lambda c: typer.echo(c.wait(target, until=until, timeout=timeout, session=session).value))
+    """対象が指定状態（既定 idle）になるまで待つ。--until-text 指定時は画面に文字列が出るまで。"""
+
+    def run(c):
+        state = c.wait(target, until=until, until_text=until_text, timeout=timeout, session=session)
+        # 状態待ちは最終状態を、文字列待ち（--until-text）は見つかった marker を出力する。
+        typer.echo(until_text if until_text is not None else state.value)
+
+    _run(run)
 
 
 @app.command()
@@ -193,9 +204,17 @@ def tab(
     profile: str | None = typer.Option(None, "--profile"),
     command: str | None = typer.Option(None, "--cmd"),
     new_window: bool = typer.Option(False, "--window", help="新規ウィンドウ"),
+    in_window: str | None = typer.Option(None, "--in-window", help="既存ウィンドウ（window_id）内にタブを作る"),
 ):
-    """タブ（または --window でウィンドウ）を作り、新 session_id を出力する。"""
-    _run(lambda c: typer.echo(c.tab(profile=profile, command=command, new_window=new_window)))
+    """タブを作り、新 session_id を出力する。
+
+    既定は current ウィンドウ。--window で新規ウィンドウ、--in-window <wid> で指定ウィンドウ内。
+    """
+    _run(
+        lambda c: typer.echo(
+            c.tab(profile=profile, command=command, new_window=new_window, window_id=in_window)
+        )
+    )
 
 
 @app.command()
@@ -205,6 +224,23 @@ def focus(
 ):
     """対象にフォーカスを移す。"""
     _run(lambda c: c.focus(target, session=session))
+
+
+@app.command(name="set-name")
+def set_name(
+    name: str = typer.Argument(..., help="ペインの表示名"),
+    target: str | None = typer.Option(None, "-t", "--target"),
+    session: str | None = typer.Option(None, "-s", "--session"),
+    json_out: bool = typer.Option(False, "--json"),
+):
+    """ペイン（セッション）の表示名を設定する。"""
+
+    def run(c):
+        sid = c.set_name(target, name, session=session)
+        if json_out:
+            typer.echo(json.dumps({"session_id": sid, "name": name}, ensure_ascii=False))
+
+    _run(run)
 
 
 @app.command()

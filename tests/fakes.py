@@ -73,11 +73,29 @@ class FakeAdapter(ITerm2Adapter):
         return new_id
 
     def create_tab(
-        self, *, profile: str | None = None, command: str | None = None, new_window: bool = False
+        self,
+        *,
+        profile: str | None = None,
+        command: str | None = None,
+        new_window: bool = False,
+        window_id: str | None = None,
     ) -> str:
+        if window_id is not None:
+            # 指定窓が存在するか（その窓に属する開いたセッションがあるか）を確認。
+            if not any(
+                s.info.window_id == window_id for s in self._sessions.values() if not s.closed
+            ):
+                raise SessionNotFound(window_id)
+            new_id = self._new_id("tab")
+            self.add_session(new_id, name="", window_id=window_id)
+            return new_id
         new_id = self._new_id("win" if new_window else "tab")
         self.add_session(new_id, name="")
         return new_id
+
+    def set_name(self, session_id: str, name: str) -> None:
+        s = self._get(session_id)
+        s.info = _with(s.info, name=name)
 
     def activate(self, session_id: str) -> None:
         self._get(session_id)  # 存在チェック

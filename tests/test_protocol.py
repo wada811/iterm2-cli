@@ -80,3 +80,31 @@ def test_dispatch_session_not_found():
     _, c = ctl()
     resp = dispatch(c, make_request("1", "session.read", {"session": "missing"}))
     assert not resp["ok"] and resp["error"]["code"] == "session_not_found"
+
+
+def test_dispatch_set_name():
+    fa, c = ctl()
+    resp = dispatch(c, make_request("1", "session.set_name", {"session": A, "name": "renamed"}))
+    assert resp["ok"]
+    assert fa._get(A).info.name == "renamed"
+
+
+def test_dispatch_wait_until_text():
+    fa, c = ctl()
+    fa._get(A).screen = ["Remote Control active"]
+    resp = dispatch(
+        c,
+        make_request(
+            "1", "session.wait", {"session": A, "until_text": "Remote Control active", "timeout": 1, "poll_interval": 0.05}
+        ),
+    )
+    assert resp["ok"] and resp["result"]["state"] == "idle"
+
+
+def test_dispatch_new_tab_in_window():
+    fa, c = ctl()
+    fa.add_session("WIN-SESS", "anchor", window_id="w-1")
+    resp = dispatch(c, make_request("1", "window.new_tab", {"window_id": "w-1"}))
+    assert resp["ok"]
+    new_sid = resp["result"]["session_id"]
+    assert fa._get(new_sid).info.window_id == "w-1"

@@ -30,6 +30,7 @@ class Backend(Protocol):
         target: str | None = None,
         *,
         until: State = State.IDLE,
+        until_text: str | None = None,
         timeout: float = 30.0,
         poll_interval: float = 0.5,
         session: str | None = None,
@@ -39,9 +40,18 @@ class Backend(Protocol):
         self, target: str | None = None, *, vertical: bool = True, profile: str | None = None, session: str | None = None
     ) -> str: ...
 
-    def tab(self, *, profile: str | None = None, command: str | None = None, new_window: bool = False) -> str: ...
+    def tab(
+        self,
+        *,
+        profile: str | None = None,
+        command: str | None = None,
+        new_window: bool = False,
+        window_id: str | None = None,
+    ) -> str: ...
 
     def focus(self, target: str | None = None, *, session: str | None = None): ...
+
+    def set_name(self, target: str | None, name: str, *, session: str | None = None): ...
 
     def close(self, target: str | None = None, *, force: bool = False, session: str | None = None): ...
 

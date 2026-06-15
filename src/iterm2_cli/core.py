@@ -116,14 +116,29 @@ class Controller:
         target: str | None = None,
         *,
         until: State = State.IDLE,
+        until_text: str | None = None,
         timeout: float = 30.0,
         poll_interval: float = 0.5,
         session: str | None = None,
     ) -> State:
         sid = self._resolve(target, session)
+        if until_text is not None:
+            # 画面に marker が出現するまで待つ。wait_until の predicate を「marker 出現」にするだけ
+            # （達したら IDLE、未達は BUSY を返す state_fn として表現し、target=IDLE で待つ）。
+            needle = until_text.lower()
+
+            def text_state() -> State:
+                haystack = "\n".join(self.adapter.get_screen_contents(sid)).lower()
+                return State.IDLE if needle in haystack else State.BUSY
+
+            state_fn = text_state
+            target_state = State.IDLE
+        else:
+            state_fn = lambda: self._state(sid)  # noqa: E731
+            target_state = until
         return wait_until(
-            lambda: self._state(sid),
-            target=until,
+            state_fn,
+            target=target_state,
             timeout=timeout,
             poll_interval=poll_interval,
             sleep=self._sleep,
@@ -137,12 +152,26 @@ class Controller:
         sid = self._resolve(target, session)
         return self.adapter.split_pane(sid, vertical=vertical, profile=profile)
 
-    def tab(self, *, profile: str | None = None, command: str | None = None, new_window: bool = False) -> str:
-        return self.adapter.create_tab(profile=profile, command=command, new_window=new_window)
+    def tab(
+        self,
+        *,
+        profile: str | None = None,
+        command: str | None = None,
+        new_window: bool = False,
+        window_id: str | None = None,
+    ) -> str:
+        return self.adapter.create_tab(
+            profile=profile, command=command, new_window=new_window, window_id=window_id
+        )
 
     def focus(self, target: str | None = None, *, session: str | None = None) -> str:
         sid = self._resolve(target, session)
         self.adapter.activate(sid)
+        return sid
+
+    def set_name(self, target: str | None, name: str, *, session: str | None = None) -> str:
+        sid = self._resolve(target, session)
+        self.adapter.set_name(sid, name)
         return sid
 
     def close(self, target: str | None = None, *, force: bool = False, session: str | None = None) -> str:

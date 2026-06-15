@@ -71,6 +71,7 @@ class DaemonClient:
         target: str | None = None,
         *,
         until: State = State.IDLE,
+        until_text: str | None = None,
         timeout: float = 30.0,
         poll_interval: float = 0.5,
         session: str | None = None,
@@ -80,6 +81,7 @@ class DaemonClient:
             {
                 "session": self._resolve(target, session),
                 "until": until.value,
+                "until_text": until_text,
                 "timeout": timeout,
                 "poll_interval": poll_interval,
             },
@@ -94,13 +96,24 @@ class DaemonClient:
             {"session": self._resolve(target, session), "vertical": vertical, "profile": profile},
         )["session_id"]
 
-    def tab(self, *, profile: str | None = None, command: str | None = None, new_window: bool = False) -> str:
+    def tab(
+        self,
+        *,
+        profile: str | None = None,
+        command: str | None = None,
+        new_window: bool = False,
+        window_id: str | None = None,
+    ) -> str:
         return self._rpc(
-            "window.new_tab", {"profile": profile, "command": command, "new_window": new_window}
+            "window.new_tab",
+            {"profile": profile, "command": command, "new_window": new_window, "window_id": window_id},
         )["session_id"]
 
     def focus(self, target: str | None = None, *, session: str | None = None) -> None:
         self._rpc("session.focus", {"session": self._resolve(target, session)})
+
+    def set_name(self, target: str | None, name: str, *, session: str | None = None) -> None:
+        self._rpc("session.set_name", {"session": self._resolve(target, session), "name": name})
 
     def close(self, target: str | None = None, *, force: bool = False, session: str | None = None) -> None:
         self._rpc("session.close", {"session": self._resolve(target, session), "force": force})

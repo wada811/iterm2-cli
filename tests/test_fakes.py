@@ -74,3 +74,24 @@ def test_unknown_session_raises():
     fa = FakeAdapter()
     with pytest.raises(SessionNotFound):
         fa.get_screen_contents("missing")
+
+
+def test_set_name_updates_info():
+    fa = FakeAdapter()
+    fa.add_session(A, "old")
+    fa.set_name(A, "new")
+    assert next(s for s in fa.list_sessions() if s.session_id == A).name == "new"
+
+
+def test_create_tab_in_window_inherits_window_id():
+    fa = FakeAdapter()
+    fa.add_session(A, window_id="w-1")
+    new_id = fa.create_tab(window_id="w-1")
+    new_info = next(s for s in fa.list_sessions() if s.session_id == new_id)
+    assert new_info.window_id == "w-1"
+
+
+def test_create_tab_in_unknown_window_raises():
+    fa = FakeAdapter()
+    with pytest.raises(SessionNotFound):
+        fa.create_tab(window_id="missing")

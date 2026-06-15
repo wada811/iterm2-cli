@@ -58,10 +58,11 @@ iterm2 wait                   # current が idle になるまで待つ
 | `send-key <keys...> [-t T]` | 特殊キー送出（enter/tab/esc/up/down/left/right/ctrl-c …） | `iterm2 send-key ctrl-c -t worker` |
 | `read [T] [--tail N] [--json]` | 画面内容を読む（末尾の空行は除去してから `--tail` を適用） | `iterm2 read --tail 40 --json` |
 | `busy [T] [--json]` | 状態判定。**busy のとき exit 1** | `iterm2 busy worker && echo idle` |
-| `wait [T] [--timeout S] [--until S]` | 指定状態（既定 idle）まで待つ | `iterm2 wait -s <id> --timeout 120` |
+| `wait [T] [--timeout S] [--until S] [--until-text M]` | 指定状態（既定 idle）まで、または `--until-text M` で画面に文字列 M が出るまで待つ | `iterm2 wait -s <id> --until-text "Remote Control active"` |
 | `split [T] [-h] [--profile P]` | 分割し新 session_id を出力（既定は垂直、`-h` で水平） | `iterm2 split -h` |
-| `tab [--cmd C] [--window] [--profile P]` | タブ（`--window` で新窓）を作り新 session_id を出力 | `iterm2 tab --cmd claude` |
+| `tab [--cmd C] [--window] [--in-window W] [--profile P]` | タブを作り新 session_id を出力（既定 current 窓、`--window` で新窓、`--in-window W` で指定窓内） | `iterm2 tab --in-window <wid> --cmd claude` |
 | `focus [T]` | フォーカス移動 | `iterm2 focus worker` |
+| `set-name <name> [-t T] [--json]` | ペインの表示名を設定 | `iterm2 set-name "🟢 worker" -t worker` |
 | `close [T] [--force]` | ペイン/タブを閉じる | `iterm2 close -s <id> --force` |
 | `var get <name> [-t T]` / `var set <name> <value> [-t T]` | セッション変数 | `iterm2 var get user.x -t worker` |
 | `set-status <key> <value> [-t T]` | 状態を `user.<key>` に書く（後述） | `iterm2 set-status itermcli_state running` |
@@ -76,7 +77,7 @@ iterm2 wait                   # current が idle になるまで待つ
 |---|---|
 | 0 | 成功 |
 | 1 | `busy`=busy のとき / `label rm`=該当なし / `daemon`=既に起動中 |
-| 2 | エラー（対象解決不可・セッション不在・未知キー・デーモンエラー・接続失敗）。stderr に 1 行 |
+| 2 | エラー（対象解決不可・セッション不在・未知キー・`wait` タイムアウト・デーモンエラー・接続失敗）。stderr に 1 行 |
 
 ### `--json` 出力の形
 
@@ -84,6 +85,7 @@ iterm2 wait                   # current が idle になるまで待つ
 |---|---|
 | `list --json` | `[{"session_id","name","rows","cols","tab_id","window_id","is_active"}, …]` |
 | `read --json` | `{"lines": ["…", …]}` |
+| `set-name --json` | `{"session_id","name"}` |
 | `busy --json` | `{"state": "busy" \| "idle" \| "needs-input" \| "unknown"}` |
 | `label ls --json` | `{"<label>": "<session_id>", …}` |
 
