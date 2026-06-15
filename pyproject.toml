@@ -1,0 +1,25 @@
+[project]
+name = "iterm2-cli"
+version = "0.0.1"
+description = "iTerm2 をスクリプト/AIエージェントから操作する CLI（iterm2 Python API を直接利用）"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+# 実 iTerm2 への接続（RealAdapter / 結合テスト）でのみ必要。
+# ユニットテストは FakeAdapter で回るため不要。
+iterm2 = ["iterm2>=2.7"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/iterm2_cli"]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
