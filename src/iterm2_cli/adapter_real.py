@@ -27,7 +27,7 @@ class RealAdapter(ITerm2Adapter):
 
     # --- 接続ライフサイクル -------------------------------------------
     @classmethod
-    def connect(cls, *, timeout: float = _DEFAULT_TIMEOUT) -> "RealAdapter":
+    def connect(cls, *, timeout: float = _DEFAULT_TIMEOUT) -> RealAdapter:
         try:
             import iterm2  # noqa: F401
         except ImportError as e:  # pragma: no cover - 環境依存

@@ -22,8 +22,18 @@ build-backend = "hatchling.build"
 packages = ["src/iterm2_cli"]
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "ruff>=0.6"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.ruff]
+line-length = 110
+
+# バグ検出を重視（F=pyflakes, B=bugbear, I=import順）。UP/SIM の cosmetic は外す。
+[tool.ruff.lint]
+select = ["F", "B", "I"]
+ignore = [
+    "B008",   # typer は Argument/Option をデフォルト引数で呼ぶのが正しい用法
+]

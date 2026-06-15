@@ -13,7 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from iterm2_cli import cli, daemon as daemon_mod
+from iterm2_cli import cli
+from iterm2_cli import daemon as daemon_mod
 from iterm2_cli.client import DaemonClient, DaemonError
 from iterm2_cli.core import Controller
 from iterm2_cli.daemon import Daemon, is_alive

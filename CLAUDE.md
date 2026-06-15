@@ -19,6 +19,7 @@ iTerm2 をスクリプト / AI エージェントから操作する CLI。同梱
 ## 検証（実装したら必ず回す）
 
 - iTerm2 が起動し API 有効（`defaults read com.googlecode.iterm2 EnableAPIServer` = 1）な前提。
+- lint ゲート: `uv run ruff check src tests`（F=pyflakes / B=bugbear / I=import順。B008 は typer 用法のため除外）。
 - 動作確認は **uv 隔離環境**で。例: `uv run --with iterm2 -- python -m iterm2_cli list --json`。
 - レイテンシ感覚: it2api 都度接続で cold 1.57s / warm 0.58s（[docs/research.md](./docs/research.md) §3.1）。高頻度操作はデーモン経由を測る。
 - 「実装したつもり」で終えず、実際にペインを作る/送る/読むを 1 往復させて確認する。
