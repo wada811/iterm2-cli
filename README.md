@@ -21,8 +21,9 @@ it2api の全操作網羅は段階的に進め、まず **it2api で埋まらな
 
 ## ステータス
 
-**フェーズ1（都度接続 MVP）実装済み。** ライブラリ層＋CLI が動作し、実 iTerm2 に対し
-list/send/send-key/read/split/tab/focus/close/var が通る。フェーズ2（デーモン）は未実装。
+**フェーズ1（都度接続 MVP）＋フェーズ2（デーモン）実装済み。** ライブラリ層＋CLI が動作し、
+実 iTerm2 に対し list/send/send-key/read/split/tab/focus/close/var が通る。デーモン起動時は
+Unix socket 経由で動作し、未起動時は都度接続に自動フォールバックする（同一コマンド表面）。
 
 | ドキュメント | 内容 |
 |---|---|
@@ -52,6 +53,20 @@ uv run iterm2-cli label set worker <session_id>
 
 `<target>` 解決順は `--session/-s <id>` → ラベル → `$ITERM_SESSION_ID`（current）。
 
+### デーモン（低レイテンシ）
+
+都度接続は 1 コマンド ~0.6〜1.6s かかる（websocket 接続+認証）。高頻度操作はデーモンを起動すると
+接続を保持し、各コマンドは Unix socket 経由になる（**実測 list ≈ 5ms**）:
+
+```sh
+uv run --extra iterm2 iterm2-cli daemon        # 常駐起動（Ctrl-C で停止）
+uv run --extra iterm2 iterm2-cli daemon --stop # 停止
+```
+
+デーモン起動中はクライアント側に iterm2 パッケージは不要（`uv run iterm2-cli list` だけで socket 経由）。
+`<target>` の current 解決はクライアント側で行うため、デーモンが別プロセスでも各ペインの current は正しく解決される。
+socket パスは `ITERM2_CLI_SOCKET`（既定 `/tmp/iterm2-cli.sock`）。
+
 ## 開発
 
 ```sh
@@ -64,7 +79,7 @@ ITERM2_CLI_INTEGRATION=1 uv run --extra iterm2 pytest tests/integration   # 実 
 ## 今後の段階計画
 
 1. ~~**フェーズ1**: ライブラリ層＋都度接続の CLI~~（実装済み）。
-2. **フェーズ2**: 任意デーモン（Unix socket、低レイテンシ）。実体は オーケストレータ にホストさせる構成を軸に。
-3. **段階的統合**: オーケストレータ の `(利用側スクリプト)` 等を本ライブラリへの委譲に置換。
+2. ~~**フェーズ2**: 任意デーモン（Unix socket、低レイテンシ）~~（実装済み）。
+3. **段階的統合**: オーケストレータ の `(利用側スクリプト)` 等を本ライブラリへの委譲に置換。デーモン実体を オーケストレータ にホストさせる。
 
 言語は Python、依存は `uv` で自己完結。

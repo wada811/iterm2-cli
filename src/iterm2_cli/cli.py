@@ -28,32 +28,46 @@ app.add_typer(var_app, name="var")
 app.add_typer(label_app, name="label")
 
 
-def make_controller() -> Controller:
-    """本番用 Controller を組み立てる（RealAdapter で接続）。
+def make_controller():
+    """操作のバックエンドを組み立てる。
 
+    デーモンが生きていれば軽量な DaemonClient（socket 経由・低レイテンシ）を、
+    いなければ RealAdapter で都度接続する Controller を返す（同一コマンド表面）。
     テストはこの関数を monkeypatch して FakeAdapter ベースの Controller を返す。
     """
+    from .daemon import default_socket_path, is_alive
+
+    resolver = SessionResolver(labels=LabelStore().all())
+    socket_path = default_socket_path()
+    if is_alive(socket_path):
+        from .client import DaemonClient
+
+        return DaemonClient(socket_path, resolver)
+
     from .adapter_real import RealAdapter
 
-    adapter = RealAdapter.connect()
-    resolver = SessionResolver(labels=LabelStore().all())
-    return Controller(adapter, resolver)
+    return Controller(RealAdapter.connect(), resolver)
 
 
 def _run(fn):
-    """make_controller → fn(controller) → 後始末。エラーは明示メッセージで終了。"""
+    """make_controller → fn(backend) → 後始末。エラーは明示メッセージで終了。"""
+    from .client import DaemonError
+
     try:
-        controller = make_controller()
+        backend = make_controller()
     except Exception as e:  # 接続失敗等
         typer.secho(f"接続に失敗しました: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(2)
     try:
-        return fn(controller)
+        return fn(backend)
     except ResolutionError as e:
         typer.secho(f"対象を解決できません: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(2)
+    except DaemonError as e:
+        typer.secho(f"デーモンエラー: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(2)
     finally:
-        controller.adapter.shutdown()
+        backend.shutdown()
 
 
 def _emit(obj, as_json: bool, human) -> None:
@@ -234,13 +248,55 @@ def label_rm(name: str = typer.Argument(...)):
 
 @app.command()
 def ping():
-    """iTerm2 へ接続できるか確認する。"""
+    """iTerm2 へ接続できるか確認する（デーモン経由なら socket、なければ都度接続）。"""
 
-    def run(c: Controller):
+    def run(c):
         c.list()
         typer.echo("ok")
 
     _run(run)
+
+
+@app.command()
+def daemon(
+    socket_path: Optional[str] = typer.Option(None, "--socket", help="socket パス"),
+    stop: bool = typer.Option(False, "--stop", help="起動中のデーモンを停止"),
+):
+    """常駐デーモンを起動する（接続を保持し低レイテンシ）。--stop で停止。"""
+    import signal
+
+    from .daemon import Daemon, default_socket_path, is_alive
+
+    path = socket_path or str(default_socket_path())
+
+    if stop:
+        from .client import DaemonClient
+
+        if is_alive(path):
+            DaemonClient(path).stop_daemon()
+            typer.echo("stopped")
+        else:
+            typer.echo("not running")
+        return
+
+    if is_alive(path):
+        typer.secho(f"既に起動しています: {path}", fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(1)
+
+    from .adapter_real import RealAdapter
+
+    try:
+        controller = Controller(RealAdapter.connect(), SessionResolver())
+    except Exception as e:  # 接続失敗
+        typer.secho(f"接続に失敗しました: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(2)
+
+    d = Daemon(controller, path)
+    signal.signal(signal.SIGINT, lambda *_: d.stop())
+    signal.signal(signal.SIGTERM, lambda *_: d.stop())
+    typer.echo(f"iterm2-cli daemon listening: {path}")
+    d.serve()
+    typer.echo("daemon stopped")
 
 
 if __name__ == "__main__":

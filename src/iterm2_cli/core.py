@@ -32,6 +32,10 @@ class Controller:
     def _resolve(self, target: str | None, session: str | None) -> str:
         return self.resolver.resolve(target, session=session)
 
+    def shutdown(self) -> None:
+        """背後の adapter を後始末する（CLI が finally で呼ぶ）。"""
+        self.adapter.shutdown()
+
     # --- 読み取り系 ----------------------------------------------------
     def list(self) -> list[SessionInfo]:
         return self.adapter.list_sessions()
