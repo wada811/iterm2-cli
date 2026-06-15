@@ -10,7 +10,7 @@ import time
 from collections.abc import Callable
 
 from .adapter import ITerm2Adapter, SessionInfo
-from .detect import State, classify_screen, wait_until
+from .detect import STATE_VAR, State, classify_screen, state_from_var, wait_until
 from .keys import encode_keys
 from .resolver import SessionResolver
 
@@ -21,11 +21,13 @@ class Controller:
         adapter: ITerm2Adapter,
         resolver: SessionResolver | None = None,
         *,
+        state_var: str = STATE_VAR,
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.adapter = adapter
         self.resolver = resolver or SessionResolver()
+        self.state_var = state_var
         self._sleep = sleep
         self._clock = clock
 
@@ -46,6 +48,14 @@ class Controller:
 
     def busy(self, target: str | None = None, *, session: str | None = None) -> State:
         sid = self._resolve(target, session)
+        return self._state(sid)
+
+    def _state(self, sid: str) -> State:
+        """状態を判定する。user 状態変数を最優先、無ければ画面マーカー（design.md §7）。"""
+        value = self.adapter.get_variable(sid, self.state_var)
+        from_var = state_from_var(value)
+        if from_var is not None:
+            return from_var
         return classify_screen(self.adapter.get_screen_contents(sid))
 
     def var_get(self, target: str | None, name: str, *, session: str | None = None) -> str | None:
@@ -75,7 +85,7 @@ class Controller:
     ) -> State:
         sid = self._resolve(target, session)
         return wait_until(
-            lambda: self.adapter.get_screen_contents(sid),
+            lambda: self._state(sid),
             target=until,
             timeout=timeout,
             poll_interval=poll_interval,

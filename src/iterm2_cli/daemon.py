@@ -66,6 +66,7 @@ class Daemon:
         self._prepare()
         self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self._sock.bind(str(self.path))
+        os.chmod(self.path, 0o600)  # ローカル単一ユーザー前提（design.md §3 認可方針）
         self._sock.listen(16)
         try:
             while not self._stop:

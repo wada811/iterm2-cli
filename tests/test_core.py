@@ -61,6 +61,21 @@ def test_busy_classifies():
     assert c.busy(A) == State.BUSY
 
 
+def test_busy_prefers_state_variable_over_screen():
+    fa, c = make()
+    # 画面は idle だが状態変数は running → 変数が優先される。
+    fa._get(A).screen = ["$ ready"]
+    fa._get(A).variables["user.itermcli_state"] = "running"
+    assert c.busy(A) == State.BUSY
+
+
+def test_busy_falls_back_to_screen_when_var_unknown():
+    fa, c = make()
+    fa._get(A).screen = ["esc to interrupt"]
+    fa._get(A).variables["user.itermcli_state"] = "garbage"
+    assert c.busy(A) == State.BUSY
+
+
 def test_split_returns_new_id():
     fa, c = make()
     new_id = c.split(A, vertical=True)

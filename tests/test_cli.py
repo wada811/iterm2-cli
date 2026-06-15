@@ -49,6 +49,27 @@ def test_send_key(fake):
     assert fake._get(A).sent == ["\r"]
 
 
+def test_send_with_enter(fake):
+    r = runner.invoke(cli.app, ["send", "hello", "-t", "a", "--enter"])
+    assert r.exit_code == 0
+    assert fake._get(A).sent == ["hello", "\r"]
+
+
+def test_set_status_writes_user_var(fake):
+    r = runner.invoke(cli.app, ["set-status", "itermcli_state", "running", "-t", "a"])
+    assert r.exit_code == 0
+    assert fake._get(A).variables["user.itermcli_state"] == "running"
+    # busy がその変数を読む。
+    rb = runner.invoke(cli.app, ["busy", "a"])
+    assert rb.exit_code == 1  # running → busy → exit 1
+
+
+def test_set_progress_writes_user_var(fake):
+    r = runner.invoke(cli.app, ["set-progress", "42", "-t", "a"])
+    assert r.exit_code == 0
+    assert fake._get(A).variables["user.itermcli_progress"] == "42"
+
+
 def test_read_tail_json(fake):
     fake._get(A).screen = ["l1", "l2", "l3"]
     r = runner.invoke(cli.app, ["read", "a", "--tail", "2", "--json"])

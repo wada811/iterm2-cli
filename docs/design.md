@@ -77,7 +77,7 @@ iTerm2 は状態を持つ外部アプリで、実接続は遅く（cold 1.57s）
 | エラーレスポンス | `{"id":"req-1","ok":false,"error":{"code":"...","message":"..."}}` |
 | method 名前空間 | `session.*` / `pane.*` / `window.*` / `notify.*` / `system.*` |
 
-> 検討余地: 接続認可モード（cmux の `CMUX_SOCKET_MODE` 相当）を設けるか、ローカル socket のパーミッションのみで足りるか。実装時に決定。
+> 認可（決定済）: ローカル単一ユーザー前提とし、**socket ファイルを 0600** にするのみ。cmux の `CMUX_SOCKET_MODE` 相当の認可モードは設けない（必要になれば追加）。
 
 ---
 
@@ -100,7 +100,7 @@ iTerm2 は状態を持つ外部アプリで、実接続は遅く（cold 1.57s）
 | `send <target> <text> [--literal]` | `session.send_text` | target,text | 本文送信（`async_send_text`）。既定で bracket-paste 安全に送る。`--literal` で生送出 |
 | `send-key <target> <key>...` | `session.send_key` | target,keys | enter/tab/escape/backspace/delete/up/down/left/right/ctrl-c 等のキー送出 |
 | `read <target> [--tail N] [--json]` | `session.read` | target,tail | 画面内容読取（`async_get_screen_contents`） |
-| `busy <target> [--json]` | `session.busy` | target | busy/idle/needs-input 判定（exit code + JSON）。OSC/hook 駆動を第一、画面マーカーをフォールバック |
+| `busy <target> [--json]` | `session.busy` | target | busy/idle/needs-input 判定（exit code + JSON）。`user.itermcli_state` 優先、画面マーカーをフォールバック（§7）|
 | `wait <target> [--timeout S] [--for STATE]` | `session.wait` | target,timeout,state | 指定状態（既定 idle）まで待機 |
 | `split <target> [-h\|-v] [--profile P] [--cmd C]` | `pane.split` | target,vertical,profile,command | ペイン分割し新 session_id を返す（`async_split_pane`） |
 | `tab [--profile P] [--cmd C] [--window]` | `window.new_tab` | profile,command | タブ（or `--window` で新窓）作成（`async_create_tab` / `Window.async_create`） |
@@ -115,11 +115,11 @@ iTerm2 は状態を持つ外部アプリで、実接続は遅く（cold 1.57s）
 | `daemon [--socket PATH]` | — | — | 常駐起動 |
 | `ping` | `system.ping` | — | 疎通確認 |
 
-> 検討余地（実装フェーズで精査）:
-> - `send` と `send-key` の境界（複合送信 `send --enter` を糖衣として許すか）。
-> - `busy` の状態語彙（busy/idle/needs-input/done）の確定と hook イベントとの対応表。
-> - `set-status`/`set-progress` の iTerm2 UI への具体的写像（名前 vs バッジ vs ユーザー変数）。
-> - 階層操作（cmux の move/reorder 相当）や arrangement 保存/復元を本フェーズで含めるか、後続フェーズで Python API（`Arrangement.async_save/restore` 等）に直接実装するか。
+> 検討余地（決定済）:
+> - **send/send-key の境界**: `send` に `--enter/-e` 糖衣を追加（本文送出→確定キーを順に送る）。send-key は維持。
+> - **busy の状態語彙**: `busy`/`needs-input`/`idle`/`unknown`。hook の語彙 `running/needs_input/idle/done` は変数値として吸収（running→busy, idle/done→idle）。
+> - **set-status/set-progress の写像**: **user 変数に書く（非破壊）**。`set-status <k> <v>`→`user.<k>`、状態は `user.itermcli_state`、進捗は `user.itermcli_progress`。セッション名は オーケストレータ の絵文字命名を壊さないため既定で触らない（バッジ反映は将来オプション）。
+> - **階層操作（move/reorder）・arrangement**: 本フェーズ対象外。必要時に Python API（`Arrangement.async_save/restore` 等）で追加。
 
 ---
 
@@ -134,10 +134,15 @@ iTerm2 は状態を持つ外部アプリで、実接続は遅く（cold 1.57s）
 
 ## 7. 完了/busy 検知（G2 / cmux 知見）
 
-優先順位:
-1. **hook イベント駆動（第一候補）**: Claude Code の hook（オーケストレータ の `notify_state.sh` が `.state/<id>.json` に running/needs_input/idle/done を記録）を状態源にする。最も正確。
-2. **OSC 9/99/777**: ターミナル通知シーケンスを完了シグナルに使う（cmux 方式）。iTerm2 は OSC9 / OSC1337 RequestAttention に対応。
-3. **画面マーカー走査（フォールバック）**: "esc to interrupt" 等のマーカー検知（オーケストレータ 現行方式）。脆いので最後段。
+**実装方針（決定済）**: 状態を**セッション user 変数 `user.itermcli_state` に集約**して読む。書き手は複数あってよい:
+- エージェント/オーケストレータ hook が `iterm2-cli set-status itermcli_state running|needs-input|idle` で書く（最も正確）。
+- ペイン内から **OSC 1337 SetUserVar=itermcli_state=...** で書く（OSC 9/99/777 通知を直接購読する代わりに、変数へ集約できる）。
+
+`busy`/`wait` の判定優先順（`Controller._state`）:
+1. **`user.itermcli_state`**（あれば最優先。`running/busy`→busy, `needs_input`→needs-input, `idle/done`→idle）。
+2. **画面マーカー走査（フォールバック）**: "esc to interrupt" 等（オーケストレータ 現行方式）。脆いので最後段。
+
+> 実機確認済: 変数 running→busy / idle→idle を判定（[research](./research.md) 同様の手順で検証）。
 
 `busy`/`wait` はこの優先順で状態を決定する。状態語彙と hook イベントの対応は実装時に確定。
 

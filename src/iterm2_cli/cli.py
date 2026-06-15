@@ -100,9 +100,16 @@ def send(
     text: str = typer.Argument(..., help="送信する本文（Enter は含めない）"),
     target: Optional[str] = typer.Option(None, "-t", "--target", help="対象（省略時 current）"),
     session: Optional[str] = typer.Option(None, "-s", "--session", help="session_id を明示"),
+    enter: bool = typer.Option(False, "-e", "--enter", help="本文送信後に Enter で確定する"),
 ):
-    """本文を送信する（確定は send-key enter）。"""
-    _run(lambda c: c.send(target, text, session=session))
+    """本文を送信する（確定は send-key enter、または --enter）。"""
+
+    def run(c):
+        c.send(target, text, session=session)
+        if enter:
+            c.send_key(target, ["enter"], session=session)
+
+    _run(run)
 
 
 @app.command(name="send-key")
@@ -244,6 +251,33 @@ def label_rm(name: str = typer.Argument(...)):
     if not LabelStore().remove(name):
         typer.secho(f"label が見つかりません: {name}", fg=typer.colors.YELLOW, err=True)
         raise typer.Exit(1)
+
+
+@app.command(name="set-status")
+def set_status(
+    key: str = typer.Argument(..., help="状態キー（busy/wait が読むのは itermcli_state）"),
+    value: str = typer.Argument(...),
+    target: Optional[str] = typer.Option(None, "-t", "--target"),
+    session: Optional[str] = typer.Option(None, "-s", "--session"),
+):
+    """状態を user 変数 user.<key> に書く（非破壊）。
+
+    例: `set-status itermcli_state running` → busy/wait が running と判定。
+    ペイン内からは OSC 1337 SetUserVar でも同じ変数を書ける。
+    """
+    _run(lambda c: c.var_set(target, f"user.{key}", value, session=session))
+
+
+@app.command(name="set-progress")
+def set_progress(
+    value: int = typer.Argument(..., help="進捗（0-100 など）"),
+    target: Optional[str] = typer.Option(None, "-t", "--target"),
+    session: Optional[str] = typer.Option(None, "-s", "--session"),
+):
+    """進捗を user.itermcli_progress に書く。"""
+    from .detect import PROGRESS_VAR
+
+    _run(lambda c: c.var_set(target, PROGRESS_VAR, str(value), session=session))
 
 
 @app.command()

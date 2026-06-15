@@ -20,6 +20,31 @@ class State(str, Enum):
     UNKNOWN = "unknown"
 
 
+# 状態報告に使う規約のセッション変数（set-status / hook / OSC 1337 SetUserVar から書かれる）。
+STATE_VAR = "user.itermcli_state"
+PROGRESS_VAR = "user.itermcli_progress"
+
+# 変数値 → State（hook の語彙 running/needs_input/idle/done を吸収）。
+_VAR_TO_STATE: dict[str, State] = {
+    "busy": State.BUSY,
+    "running": State.BUSY,
+    "working": State.BUSY,
+    "needs-input": State.NEEDS_INPUT,
+    "needs_input": State.NEEDS_INPUT,
+    "input": State.NEEDS_INPUT,
+    "idle": State.IDLE,
+    "done": State.IDLE,
+    "ready": State.IDLE,
+}
+
+
+def state_from_var(value: str | None) -> State | None:
+    """状態変数の値を State に写す。未知/未設定なら None（画面マーカーへフォールバック）。"""
+    if not value:
+        return None
+    return _VAR_TO_STATE.get(value.strip().lower())
+
+
 # Claude Code TUI のフォールバック・マーカー（小文字で照合）。
 DEFAULT_BUSY_MARKERS: tuple[str, ...] = ("esc to interrupt",)
 DEFAULT_NEEDS_INPUT_MARKERS: tuple[str, ...] = (
@@ -54,23 +79,23 @@ class WaitTimeout(Exception):
 
 
 def wait_until(
-    read_screen: Callable[[], list[str]],
+    state_fn: Callable[[], State],
     *,
     target: State = State.IDLE,
     timeout: float = 30.0,
     poll_interval: float = 0.5,
-    classify: Callable[[list[str]], State] = classify_screen,
     sleep: Callable[[float], None],
     clock: Callable[[], float],
 ) -> State:
-    """target 状態になるまで read_screen をポーリングする。
+    """state_fn が target を返すまでポーリングする。
 
     達したらその State を返す。timeout を超えたら WaitTimeout。
+    state_fn は「変数優先→画面マーカー」のような任意の状態判定を差し込める。
     sleep/clock を注入することでテストでは即座に進められる。
     """
     deadline = clock() + timeout
     while True:
-        state = classify(read_screen())
+        state = state_fn()
         if state == target:
             return state
         if clock() >= deadline:

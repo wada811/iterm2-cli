@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from iterm2_cli.detect import State, WaitTimeout, classify_screen, wait_until
+from iterm2_cli.detect import (
+    State,
+    WaitTimeout,
+    classify_screen,
+    state_from_var,
+    wait_until,
+)
 
 
 def test_empty_screen_unknown():
@@ -41,22 +47,41 @@ class _Clock:
         return self.t
 
 
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("running", State.BUSY),
+        ("busy", State.BUSY),
+        ("needs_input", State.NEEDS_INPUT),
+        ("needs-input", State.NEEDS_INPUT),
+        ("idle", State.IDLE),
+        ("done", State.IDLE),
+        ("DONE", State.IDLE),
+        (None, None),
+        ("", None),
+        ("weird", None),
+    ],
+)
+def test_state_from_var(value, expected):
+    assert state_from_var(value) == expected
+
+
 def test_wait_reaches_target_after_polls():
-    # 3 回目の読み取りで idle になる画面を返す。
-    screens = [["esc to interrupt"], ["esc to interrupt"], ["$ done"]]
+    # 3 回目で idle になる状態列。
+    states = [State.BUSY, State.BUSY, State.IDLE]
     calls = {"n": 0}
 
-    def read():
-        i = min(calls["n"], len(screens) - 1)
+    def state_fn():
+        i = min(calls["n"], len(states) - 1)
         calls["n"] += 1
-        return screens[i]
+        return states[i]
 
     clock = _Clock()
 
     def sleep(dt):
         clock.t += dt
 
-    state = wait_until(read, target=State.IDLE, timeout=30, poll_interval=0.5, sleep=sleep, clock=clock)
+    state = wait_until(state_fn, target=State.IDLE, timeout=30, poll_interval=0.5, sleep=sleep, clock=clock)
     assert state == State.IDLE
     assert calls["n"] == 3
 
@@ -69,7 +94,7 @@ def test_wait_times_out():
 
     with pytest.raises(WaitTimeout):
         wait_until(
-            lambda: ["esc to interrupt"],
+            lambda: State.BUSY,
             target=State.IDLE,
             timeout=2,
             poll_interval=1,
