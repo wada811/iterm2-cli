@@ -29,20 +29,23 @@
 ┌─────────────────────────────────────────────┐
 │  CLI 層 (typer)   iterm2-cli <subcommand>     │  ← 人間向けエイリアス。薄い
 ├─────────────────────────────────────────────┤
-│  ライブラリ層  iterm2_cli パッケージ            │  ← 中核。オーケストレータ が import 可能
+│  ライブラリ層（中核ロジック）iterm2_cli         │  ← オーケストレータ が import 可能
 │   - SessionResolver (<target> 解決)           │
-│   - 各操作 (send/read/split/...) async 実装    │
-│   - 送信作法・完了検知                          │
+│   - 各操作 (send/read/split/...)              │     ※ Adapter インターフェースにのみ依存
+│   - 送信作法・完了検知（状態機械）              │     （iterm2 pip を直接触らない）
 ├─────────────────────────────────────────────┤
-│  接続層                                        │
-│   - 都度接続 (フェーズ1, 既定)                  │
-│   - デーモン+Unix socket クライアント (フェーズ2) │
+│  Adapter 層（port）  ITerm2Adapter (interface) │  ← テスタビリティの継ぎ目
+│   ├ RealAdapter  : iterm2 pip (websocket/async)│
+│   └ FakeAdapter  : テスト用インメモリ実装       │
+├─────────────────────────────────────────────┤
+│  接続層: 都度接続(フェーズ1) / デーモン+socket(2) │
 └─────────────────────────────────────────────┘
         │                          │
-   iterm2 pip (websocket/async) ←→ iTerm2 Python API
+   RealAdapter 経由 ←──────────→ iTerm2 Python API
 ```
 
 - **CLI サブコマンドは socket method と 1:1 対応**（cmux 踏襲）。CLI はライブラリ/デーモンへの薄いクライアント。
+- **中核ロジックは `ITerm2Adapter` インターフェースにのみ依存**し、`iterm2` pip を直接触らない。本番は `RealAdapter`、テストは `FakeAdapter` を差す（ports & adapters / humble object）。→ §2.2。
 - **デーモン未起動なら CLI が自前で都度接続にフォールバック。** フェーズ1（都度接続）とフェーズ2（デーモン）を**同一コマンド表面**で両立。
 - **ライブラリ層を オーケストレータ が import** することで、`オーケストレータ.py`/`(利用側スクリプト)` のアドホック制御を段階的に置換。
 
@@ -52,6 +55,15 @@
 - **フェーズ1（既定）**: it2api 同様コマンド毎に websocket 接続+認証。実装単純で正しさを担保。対話用途では実用範囲（warm ~0.6s）。
 - **フェーズ2（必要時）**: 接続を保持する常駐 `iterm2-cli daemon` を Unix socket で待受け、CLI は軽量クライアント。高頻度バッチ向け。
   - **重要**: オーケストレータ の `オーケストレータ.py` は既に「接続を保持する常駐 Python」。**デーモンの実体を オーケストレータ に寄せる**（CLI がライブラリを提供、オーケストレータ がホスト）構成で二重管理を回避。`daemon` サブコマンドは単独利用時の選択肢として用意。
+
+### 2.2 テスタビリティ（adapter seam）
+iTerm2 は状態を持つ外部アプリで、実接続は遅く（cold 1.57s）不安定になりがち。これを**設計で吸収**する:
+
+- **`ITerm2Adapter`（port）**: `send_text` / `send_key` / `get_screen_contents` / `split_pane` / `create_tab` / `activate` / `close` / `get|set_variable` / `list_sessions` 等の最小インターフェース。中核ロジックはこれにのみ依存。
+- **`RealAdapter`**: `iterm2` pip を実装に持つ。ここだけが websocket/async と認証を扱う。
+- **`FakeAdapter`**: インメモリのセッション木を持つテスト用実装。送信・画面内容・分割を模擬し、**iTerm2 無しでユニットテストを高速に回す**。
+- **テストの線引き**: 純ロジック（resolver / label / プロトコル encode-decode / send-key 符号化 / 完了検知の状態機械 / `--json` 整形）は `FakeAdapter` でユニット TDD。実 iTerm2 は split→send→read を 1 往復する**少数の結合テスト**に限定。
+- 開発手順は Canon TDD に従う（[CLAUDE.md](../CLAUDE.md) のテスト戦略、出典 [t-wada 解説](https://t-wada.hatenablog.jp/entry/canon-tdd-by-kent-beck)）。テストリストは §5 のコマンド表面＋「検討余地」を起点にする。
 
 ---
 
@@ -153,16 +165,21 @@ iterm2-cli/
 ├── src/iterm2_cli/
 │   ├── __init__.py
 │   ├── cli.py            typer エントリ（薄い）
-│   ├── core.py           async 操作の中核
+│   ├── core.py           中核ロジック（Adapter にのみ依存）
+│   ├── adapter.py        ITerm2Adapter(port) / RealAdapter(iterm2 pip)
 │   ├── resolver.py       <target> 解決・label 管理
 │   ├── detect.py         busy/完了検知（hook/OSC/マーカー）
 │   ├── daemon.py         Unix socket サーバ（フェーズ2）
 │   └── client.py         socket クライアント
+├── tests/
+│   ├── fakes.py          FakeAdapter（インメモリ）
+│   ├── test_*.py         ユニット（FakeAdapter・高速）
+│   └── integration/      実 iTerm2 結合テスト（少数・要 iTerm2）
 ├── pyproject.toml        uv プロジェクト（typer, iterm2 依存）
 └── README.md
 ```
 
-> 構成は実装フェーズで確定。単一スクリプト（PEP 723）から始め、規模に応じてパッケージ化する選択肢もある。
+> 構成は実装フェーズで確定。単一スクリプト（PEP 723）から始め、規模に応じてパッケージ化する選択肢もある。core と adapter の分離（§2.2）は規模に関わらず維持する。
 
 ---
 

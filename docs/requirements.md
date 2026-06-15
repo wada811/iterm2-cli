@@ -81,6 +81,7 @@ iTerm2 には既に同梱 CLI `it2api` があり、Python API のほぼ全操作
 | NFR6（互換） | iTerm2 3.0+（Python API）。API 許可は初回ダイアログ or `ITERM2_COOKIE` |
 | NFR7（堅牢性） | 接続失敗・認証失敗・対象セッション消失を明示エラーで返す（silent fail しない） |
 | NFR8（安全） | 不可逆操作（リポジトリ push/名前変更、credential、API 許可設定の改変）は実行せず停止（オーケストレータ 不可逆操作 規約） |
+| NFR9（テスタビリティ） | 中核ロジックは iTerm2 接続から分離（`ITerm2Adapter` の port、Fake で差替え）、iTerm2 無しでユニットテストが回る。実 iTerm2 結合テストは最小限。開発は Canon TDD（テストリスト先行）で進める（[design.md](./design.md) §2.2） |
 
 ---
 
