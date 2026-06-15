@@ -4,7 +4,10 @@ version = "0.0.1"
 description = "iTerm2 をスクリプト/AIエージェントから操作する CLI（iterm2 Python API を直接利用）"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["typer>=0.12"]
+
+[project.scripts]
+iterm2-cli = "iterm2_cli.cli:app"
 
 [project.optional-dependencies]
 # 実 iTerm2 への接続（RealAdapter / 結合テスト）でのみ必要。

@@ -65,6 +65,10 @@ class ITerm2Adapter(abc.ABC):
     def set_variable(self, session_id: str, name: str, value: str) -> None:
         """セッション変数（user.* 等）を設定する。"""
 
+    def shutdown(self) -> None:
+        """接続等の後始末（既定は no-op）。RealAdapter が websocket を閉じる。"""
+        return None
+
 
 class SessionNotFound(Exception):
     """指定 session_id のセッションが存在しないとき（NFR7: silent fail しない）。"""

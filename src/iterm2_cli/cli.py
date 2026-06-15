@@ -1,0 +1,247 @@
+"""typer による CLI（design.md §5）。
+
+CLI は薄いクライアント。各サブコマンドは Controller を呼ぶだけ。
+adapter の生成は ``make_controller`` に集約し、テストではここを差し替えて
+FakeAdapter を注入する（実 iTerm2 に触れずに CLI を検証）。
+
+TARGET の既定は current（$ITERM_SESSION_ID）。send/send-key はペイロードを持つため
+対象は -t/--target で指定する。
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict
+from typing import Optional
+
+import typer
+
+from .core import Controller
+from .detect import State
+from .labels import LabelStore
+from .resolver import ResolutionError, SessionResolver
+
+app = typer.Typer(no_args_is_help=True, help="iTerm2 を操作する CLI")
+var_app = typer.Typer(no_args_is_help=True, help="セッション変数 get/set")
+label_app = typer.Typer(no_args_is_help=True, help="label ↔ session_id マッピング")
+app.add_typer(var_app, name="var")
+app.add_typer(label_app, name="label")
+
+
+def make_controller() -> Controller:
+    """本番用 Controller を組み立てる（RealAdapter で接続）。
+
+    テストはこの関数を monkeypatch して FakeAdapter ベースの Controller を返す。
+    """
+    from .adapter_real import RealAdapter
+
+    adapter = RealAdapter.connect()
+    resolver = SessionResolver(labels=LabelStore().all())
+    return Controller(adapter, resolver)
+
+
+def _run(fn):
+    """make_controller → fn(controller) → 後始末。エラーは明示メッセージで終了。"""
+    try:
+        controller = make_controller()
+    except Exception as e:  # 接続失敗等
+        typer.secho(f"接続に失敗しました: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(2)
+    try:
+        return fn(controller)
+    except ResolutionError as e:
+        typer.secho(f"対象を解決できません: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(2)
+    finally:
+        controller.adapter.shutdown()
+
+
+def _emit(obj, as_json: bool, human) -> None:
+    if as_json:
+        typer.echo(json.dumps(obj, ensure_ascii=False))
+    else:
+        human(obj)
+
+
+@app.command(name="list")
+def list_sessions(json_out: bool = typer.Option(False, "--json", help="JSON 出力")):
+    """セッション/ペインを列挙する。"""
+
+    def run(c: Controller):
+        sessions = [asdict(s) for s in c.list()]
+        _emit(
+            sessions,
+            json_out,
+            lambda ss: [
+                typer.echo(f"{s['session_id']}  {'*' if s['is_active'] else ' '} {s['name']}")
+                for s in ss
+            ],
+        )
+
+    _run(run)
+
+
+@app.command()
+def send(
+    text: str = typer.Argument(..., help="送信する本文（Enter は含めない）"),
+    target: Optional[str] = typer.Option(None, "-t", "--target", help="対象（省略時 current）"),
+    session: Optional[str] = typer.Option(None, "-s", "--session", help="session_id を明示"),
+):
+    """本文を送信する（確定は send-key enter）。"""
+    _run(lambda c: c.send(target, text, session=session))
+
+
+@app.command(name="send-key")
+def send_key(
+    keys: list[str] = typer.Argument(..., help="キー名（enter/tab/esc/up/ctrl-c ...）"),
+    target: Optional[str] = typer.Option(None, "-t", "--target"),
+    session: Optional[str] = typer.Option(None, "-s", "--session"),
+):
+    """特殊キー/確定キーを送る。"""
+    _run(lambda c: c.send_key(target, keys, session=session))
+
+
+@app.command()
+def read(
+    target: Optional[str] = typer.Argument(None, help="対象（省略時 current）"),
+    tail: Optional[int] = typer.Option(None, "--tail", help="末尾 N 行"),
+    session: Optional[str] = typer.Option(None, "-s", "--session"),
+    json_out: bool = typer.Option(False, "--json"),
+):
+    """画面内容を読み取る。"""
+
+    def run(c: Controller):
+        lines = c.read(target, tail=tail, session=session)
+        _emit({"lines": lines}, json_out, lambda o: [typer.echo(line) for line in o["lines"]])
+
+    _run(run)
+
+
+@app.command()
+def busy(
+    target: Optional[str] = typer.Argument(None),
+    session: Optional[str] = typer.Option(None, "-s", "--session"),
+    json_out: bool = typer.Option(False, "--json"),
+):
+    """busy 判定。busy のとき exit code 1。"""
+
+    def run(c: Controller):
+        state = c.busy(target, session=session)
+        _emit({"state": state.value}, json_out, lambda o: typer.echo(o["state"]))
+        if state == State.BUSY:
+            raise typer.Exit(1)
+
+    _run(run)
+
+
+@app.command()
+def wait(
+    target: Optional[str] = typer.Argument(None),
+    timeout: float = typer.Option(30.0, "--timeout"),
+    until: State = typer.Option(State.IDLE, "--until"),
+    session: Optional[str] = typer.Option(None, "-s", "--session"),
+):
+    """対象が指定状態（既定 idle）になるまで待つ。"""
+    _run(lambda c: typer.echo(c.wait(target, until=until, timeout=timeout, session=session).value))
+
+
+@app.command()
+def split(
+    target: Optional[str] = typer.Argument(None),
+    horizontal: bool = typer.Option(False, "-h", "--horizontal", help="水平分割（既定は垂直）"),
+    profile: Optional[str] = typer.Option(None, "--profile"),
+    session: Optional[str] = typer.Option(None, "-s", "--session"),
+):
+    """ペインを分割し、新 session_id を出力する。"""
+    _run(lambda c: typer.echo(c.split(target, vertical=not horizontal, profile=profile, session=session)))
+
+
+@app.command()
+def tab(
+    profile: Optional[str] = typer.Option(None, "--profile"),
+    command: Optional[str] = typer.Option(None, "--cmd"),
+    new_window: bool = typer.Option(False, "--window", help="新規ウィンドウ"),
+):
+    """タブ（または --window でウィンドウ）を作り、新 session_id を出力する。"""
+    _run(lambda c: typer.echo(c.tab(profile=profile, command=command, new_window=new_window)))
+
+
+@app.command()
+def focus(
+    target: Optional[str] = typer.Argument(None),
+    session: Optional[str] = typer.Option(None, "-s", "--session"),
+):
+    """対象にフォーカスを移す。"""
+    _run(lambda c: c.focus(target, session=session))
+
+
+@app.command()
+def close(
+    target: Optional[str] = typer.Argument(None),
+    force: bool = typer.Option(False, "--force"),
+    session: Optional[str] = typer.Option(None, "-s", "--session"),
+):
+    """対象（ペイン/タブ）を閉じる。"""
+    _run(lambda c: c.close(target, force=force, session=session))
+
+
+@var_app.command("get")
+def var_get(
+    name: str = typer.Argument(...),
+    target: Optional[str] = typer.Argument(None),
+    session: Optional[str] = typer.Option(None, "-s", "--session"),
+):
+    def run(c: Controller):
+        value = c.var_get(target, name, session=session)
+        if value is not None:
+            typer.echo(value)
+
+    _run(run)
+
+
+@var_app.command("set")
+def var_set(
+    name: str = typer.Argument(...),
+    value: str = typer.Argument(...),
+    target: Optional[str] = typer.Option(None, "-t", "--target"),
+    session: Optional[str] = typer.Option(None, "-s", "--session"),
+):
+    _run(lambda c: c.var_set(target, name, value, session=session))
+
+
+@label_app.command("set")
+def label_set(name: str = typer.Argument(...), session_id: str = typer.Argument(...)):
+    """label に session_id を割り当てる。"""
+    LabelStore().set(name, session_id)
+
+
+@label_app.command("ls")
+def label_ls(json_out: bool = typer.Option(False, "--json")):
+    mapping = LabelStore().all()
+    if json_out:
+        typer.echo(json.dumps(mapping, ensure_ascii=False))
+    else:
+        for k, v in sorted(mapping.items()):
+            typer.echo(f"{k}\t{v}")
+
+
+@label_app.command("rm")
+def label_rm(name: str = typer.Argument(...)):
+    if not LabelStore().remove(name):
+        typer.secho(f"label が見つかりません: {name}", fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(1)
+
+
+@app.command()
+def ping():
+    """iTerm2 へ接続できるか確認する。"""
+
+    def run(c: Controller):
+        c.list()
+        typer.echo("ok")
+
+    _run(run)
+
+
+if __name__ == "__main__":
+    app()
