@@ -43,9 +43,23 @@ iTerm2 をスクリプト / AI エージェントから操作する CLI。同梱
 2. **CLI サブコマンド ↔ socket method を 1:1** に保つ。CLI は薄いクライアント、ロジックはライブラリ層に置く（[design.md](./docs/design.md) §2, §5）。
 3. **`<target>` 解決順** = `--session <id>` → ラベル → `$ITERM_SESSION_ID`（current）。省略時 current（§4）。
 4. **永続状態は session_id↔label の最小マッピングのみ**。branch/cwd 等は都度 iTerm2 変数や FS から引く。
-5. **完了/busy 検知の優先順** = hook イベント → OSC 9/99/777 → 画面マーカー（フォールバック）（§7）。
+5. **完了/busy 検知の優先順** = `user.itermcli_state`（`set-status` / OSC 1337 SetUserVar で書かれる）→ 画面マーカー（フォールバック・env で上書き可）（§7）。
 6. **全コマンドに `--json`** を用意（機械可読出力）。
 7. **エラーは silent fail させない**（接続/認証失敗・対象セッション消失を明示）。
+
+## 新しい操作を足す手順（it2api 機能の取り込み）
+
+完全代替は**段階的**。実運用で「この it2api 機能が要る」となったら、その操作だけを Python API で
+直接実装して足す（**シェルアウトはしない**＝不変条件 1）。it2api / iterm2 Python API は移植元リファレンス。
+
+1. **移植元を確認**: it2api の該当サブコマンド or iterm2 Python API の `async_*` メソッドを見る。
+2. **port**: `ITerm2Adapter`(adapter.py) に最小メソッドを足し、`RealAdapter` で実装、`tests/fakes.py` の `FakeAdapter` にも実装。
+3. **中核**: `Controller`(core.py) に操作を足す（adapter にのみ依存・`<target>` 解決を通す）。
+4. **表面**: `Backend`(backend.py) Protocol に署名追加。socket 経由が要るなら `protocol.HANDLERS` に登録＋`DaemonClient`(client.py) にメソッド追加。
+5. **CLI**: cli.py にサブコマンド配線（target 指定規則・`--json`・exit code に従う）。
+6. **テスト**: ユニット（FakeAdapter）＋ `tests/test_daemon.py` の契約テスト `DRIVEN` に追加（**Backend 集合一致 assert が追従漏れを強制検出**）＋ 必要なら結合（オプトイン）。
+7. **docs**: README コマンド表 / design §5 socket 契約表を更新。
+8. `uv run pytest` と `uv run ruff check src tests` が緑。
 
 ## プロンプト / ペイン送信の規約
 
