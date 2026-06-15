@@ -1,6 +1,6 @@
 # CLAUDE.md — iterm2-cli 作業ガイド
 
-このリポジトリで作業する Claude / 開発者向けの運用ガイド。**何を作るかは [docs/](./docs/) が一次情報**（要件 `requirements.md` / 設計 `design.md` / 調査 `research.md`）。本書は「どう進めるか」と「守るべき不変条件」をまとめる。
+このリポジトリで作業する Claude / 開発者向けの運用ガイド。**何を作るかは [docs/](./docs/) が一次情報**（要件 `requirements.md` / 設計 `design.md` / 調査 `research.md`）。**なぜそうなっているか（設計思想・決定の根拠）は [docs/decisions.md](./docs/decisions.md)**。本書は「どう進めるか」と「守るべき不変条件」をまとめる。
 
 コマンド表面・使い方・アーキ俯瞰は [README.md](./README.md) が入口。
 

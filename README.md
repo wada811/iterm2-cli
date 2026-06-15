@@ -184,7 +184,7 @@ socket のプリミティブの上に**薄いラッパーとして外側に**載
 | `src/iterm2_cli/keys.py` | send-key 符号化 |
 | `src/iterm2_cli/daemon.py` / `client.py` / `protocol.py` | デーモン / クライアント / socket プロトコル |
 | `tests/` | ユニット（FakeAdapter）／`tests/integration/`（実 iTerm2・オプトイン） |
-| `docs/` | [requirements](./docs/requirements.md) / [design](./docs/design.md) / [research](./docs/research.md) |
+| `docs/` | [requirements](./docs/requirements.md) / [design](./docs/design.md) / [decisions](./docs/decisions.md)（設計思想・なぜ）/ [research](./docs/research.md) |
 | [CLAUDE.md](./CLAUDE.md) | 開発ガイド（手順・設計不変条件・テスト戦略） |
 
 ---

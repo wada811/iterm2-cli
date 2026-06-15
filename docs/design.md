@@ -2,7 +2,7 @@
 
 作成日: 2026-06-15
 
-要件（[requirements.md](./requirements.md)）を満たす実装設計。言語選定・アーキテクチャ・コマンド表面・socket プロトコル・送信作法・完了検知・外部からの利用方法を定める。調査根拠は [research.md](./research.md)。
+要件（[requirements.md](./requirements.md)）を満たす実装設計。言語選定・アーキテクチャ・コマンド表面・socket プロトコル・送信作法・完了検知・外部からの利用方法を定める。調査根拠は [research.md](./research.md)、**各決定の理由・退けた代替は [decisions.md](./decisions.md)**。
 
 > 本書はアーキテクチャと socket 契約を定める。CLI の利用方法・フラグ・exit code・`--json` 形は
 > 利用者向けの [README](../README.md) を正とし、ここでは重複させない。
