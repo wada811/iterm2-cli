@@ -7,7 +7,26 @@ requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "wada811" }]
+keywords = ["iterm2", "terminal", "cli", "automation", "macos", "agent"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Environment :: MacOS X",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Terminals",
+    "Topic :: Software Development :: Libraries",
+]
 dependencies = ["typer>=0.12"]
+
+[project.urls]
+Homepage = "https://github.com/wada811/iterm2-cli"
+Repository = "https://github.com/wada811/iterm2-cli"
+Issues = "https://github.com/wada811/iterm2-cli/issues"
 
 [project.scripts]
 iterm2-cli = "iterm2_cli.cli:app"

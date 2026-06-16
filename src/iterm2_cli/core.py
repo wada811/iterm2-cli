@@ -22,7 +22,7 @@ from .detect import (
     wait_until,
 )
 from .keys import encode_keys
-from .resolver import SessionResolver
+from .resolver import ResolutionError, SessionResolver
 
 
 def _markers_from_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
@@ -152,16 +152,36 @@ class Controller:
         sid = self._resolve(target, session)
         return self.adapter.split_pane(sid, vertical=vertical, profile=profile)
 
+    _UNSET = object()
+
     def tab(
         self,
+        target: str | None = None,
         *,
         profile: str | None = None,
         command: str | None = None,
         new_window: bool = False,
         window_id: str | None = None,
+        session: str | None = None,
+        from_session: object = _UNSET,
     ) -> str:
+        # from_session が明示渡し（デーモンの handler 経路）ならクライアントで解決済み。
+        # 未指定（直接利用＝CLI 非デーモン経路）なら、呼び出し元の current ペインを
+        # このプロセスで解決し「呼び出し元の窓」にタブを作る（D5: current 解決はクライアント側）。
+        if from_session is Controller._UNSET:
+            from_session = None
+            if not new_window and window_id is None:
+                try:
+                    from_session = self._resolve(target, session)
+                except ResolutionError:
+                    # iTerm2 外などで current を特定できない → adapter 既定の current 窓へ。
+                    from_session = None
         return self.adapter.create_tab(
-            profile=profile, command=command, new_window=new_window, window_id=window_id
+            profile=profile,
+            command=command,
+            new_window=new_window,
+            window_id=window_id,
+            from_session=from_session,
         )
 
     def focus(self, target: str | None = None, *, session: str | None = None) -> str:

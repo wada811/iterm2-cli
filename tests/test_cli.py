@@ -166,3 +166,14 @@ def test_tab_in_window(fake):
 def test_tab_in_unknown_window_exit_2(fake):
     r = runner.invoke(cli.app, ["tab", "--in-window", "nonexistent"])
     assert r.exit_code == 2
+
+
+def test_tab_in_caller_window_via_session(fake):
+    # #2: -s で呼び出し元ペインを指すと、その窓にタブが作られる（D5・クライアント側解決）。
+    B = "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
+    fake.add_session(B, "anchor", window_id="w-2")
+    r = runner.invoke(cli.app, ["tab", "-s", B])
+    assert r.exit_code == 0
+    new_sid = r.stdout.strip()
+    new_info = next(s for s in fake.list_sessions() if s.session_id == new_sid)
+    assert new_info.window_id == "w-2"

@@ -74,28 +74,45 @@ class RealAdapter(ITerm2Adapter):
             return win.current_tab.current_session.session_id
         return None
 
+    def _window_for_session(self, session_id: str):
+        """session_id を含むウィンドウを返す（無ければ None）。"""
+        for window in self._app.terminal_windows:
+            for tab in window.tabs:
+                for s in tab.sessions:
+                    if s.session_id == session_id:
+                        return window
+        return None
+
     # --- port 実装 ------------------------------------------------------
     def list_sessions(self) -> list[SessionInfo]:
         async def _run():
             await self._app.async_refresh()
             current = self._current_session_id()
+            # (window, tab, session) を平坦化してから name をまとめて並行取得する
+            # （逐次 await の N+1 を避ける。list は監視ループのホットパス）。
+            triples = [
+                (window, tab, s)
+                for window in self._app.terminal_windows
+                for tab in window.tabs
+                for s in tab.sessions
+            ]
+            names = await asyncio.gather(
+                *(s.async_get_variable("session.name") for (_, _, s) in triples)
+            )
             out: list[SessionInfo] = []
-            for window in self._app.terminal_windows:
-                for tab in window.tabs:
-                    for s in tab.sessions:
-                        name = await s.async_get_variable("session.name")
-                        size = s.grid_size
-                        out.append(
-                            SessionInfo(
-                                session_id=s.session_id,
-                                name=name or "",
-                                rows=getattr(size, "height", 0) or 0,
-                                cols=getattr(size, "width", 0) or 0,
-                                tab_id=tab.tab_id,
-                                window_id=window.window_id,
-                                is_active=(s.session_id == current),
-                            )
-                        )
+            for (window, tab, s), name in zip(triples, names, strict=True):
+                size = s.grid_size
+                out.append(
+                    SessionInfo(
+                        session_id=s.session_id,
+                        name=name or "",
+                        rows=getattr(size, "height", 0) or 0,
+                        cols=getattr(size, "width", 0) or 0,
+                        tab_id=tab.tab_id,
+                        window_id=window.window_id,
+                        is_active=(s.session_id == current),
+                    )
+                )
             return out
 
         return self._call(_run())
@@ -106,11 +123,10 @@ class RealAdapter(ITerm2Adapter):
 
         self._call(_run())
 
-    def get_screen_contents(self, session_id: str, max_lines: int | None = None) -> list[str]:
+    def get_screen_contents(self, session_id: str) -> list[str]:
         async def _run():
             contents = await self._session_or_raise(session_id).async_get_screen_contents()
-            lines = [contents.line(i).string for i in range(contents.number_of_lines)]
-            return lines[-max_lines:] if max_lines is not None else lines
+            return [contents.line(i).string for i in range(contents.number_of_lines)]
 
         return self._call(_run())
 
@@ -130,6 +146,7 @@ class RealAdapter(ITerm2Adapter):
         command: str | None = None,
         new_window: bool = False,
         window_id: str | None = None,
+        from_session: str | None = None,
     ) -> str:
         async def _run():
             import iterm2
@@ -145,7 +162,13 @@ class RealAdapter(ITerm2Adapter):
                     self._connection, profile=profile, command=command
                 )
                 return window.current_tab.current_session.session_id
-            window = self._app.current_terminal_window or self._app.terminal_windows[0]
+            if from_session is not None:
+                # 呼び出し元（クライアント）の current ペインを含む窓に作る（D5）。
+                window = self._window_for_session(from_session)
+                if window is None:
+                    raise SessionNotFound(from_session)
+            else:
+                window = self._app.current_terminal_window or self._app.terminal_windows[0]
             tab = await window.async_create_tab(profile=profile, command=command)
             return tab.current_session.session_id
 

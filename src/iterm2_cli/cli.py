@@ -201,18 +201,28 @@ def split(
 
 @app.command()
 def tab(
+    target: str | None = typer.Option(None, "-t", "--target", help="呼び出し元ペイン（省略時 current）"),
     profile: str | None = typer.Option(None, "--profile"),
     command: str | None = typer.Option(None, "--cmd"),
     new_window: bool = typer.Option(False, "--window", help="新規ウィンドウ"),
     in_window: str | None = typer.Option(None, "--in-window", help="既存ウィンドウ（window_id）内にタブを作る"),
+    session: str | None = typer.Option(None, "-s", "--session", help="session_id を明示"),
 ):
     """タブを作り、新 session_id を出力する。
 
-    既定は current ウィンドウ。--window で新規ウィンドウ、--in-window <wid> で指定ウィンドウ内。
+    既定は呼び出し元（current）のウィンドウ。--window で新規ウィンドウ、--in-window <wid> で指定ウィンドウ内。
+    デーモン起動中でも current 窓はクライアント側で解決するため、呼び出し元の窓にタブが作られる（D5）。
     """
     _run(
         lambda c: typer.echo(
-            c.tab(profile=profile, command=command, new_window=new_window, window_id=in_window)
+            c.tab(
+                target,
+                profile=profile,
+                command=command,
+                new_window=new_window,
+                window_id=in_window,
+                session=session,
+            )
         )
     )
 

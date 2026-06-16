@@ -36,8 +36,12 @@ class ITerm2Adapter(abc.ABC):
         """ユーザーが打鍵したかのようにテキスト（制御文字含む）を送る。"""
 
     @abc.abstractmethod
-    def get_screen_contents(self, session_id: str, max_lines: int | None = None) -> list[str]:
-        """現在の画面行を上から順に返す。max_lines 指定時は末尾 N 行。"""
+    def get_screen_contents(self, session_id: str) -> list[str]:
+        """現在の画面行を上から順に返す（全行）。
+
+        末尾空行の trim・``--tail`` は Controller 側で行う（trim を tail より先に
+        適用する仕様のため、取得は常に全行）。
+        """
 
     @abc.abstractmethod
     def split_pane(self, session_id: str, *, vertical: bool, profile: str | None = None) -> str:
@@ -51,10 +55,15 @@ class ITerm2Adapter(abc.ABC):
         command: str | None = None,
         new_window: bool = False,
         window_id: str | None = None,
+        from_session: str | None = None,
     ) -> str:
         """新しいタブ（または new_window でウィンドウ）を作り、新 session_id を返す。
 
-        window_id 指定時はその既存ウィンドウ内にタブを作る（無ければ SessionNotFound）。
+        - window_id 指定時はその既存ウィンドウ内にタブを作る（無ければ SessionNotFound）。
+        - from_session 指定時はその session を含むウィンドウにタブを作る（無ければ
+          SessionNotFound）。呼び出し元（クライアント）の current 窓を指すための引数で、
+          デーモン視点の current 窓に作ってしまう D5 違反を避ける。
+        - いずれも未指定なら adapter 視点の current 窓（フォールバック）。
         """
 
     @abc.abstractmethod

@@ -60,7 +60,7 @@ iterm2 wait                   # current が idle になるまで待つ
 | `busy [T] [--json]` | 状態判定。**busy のとき exit 1** | `iterm2 busy worker && echo idle` |
 | `wait [T] [--timeout S] [--until S] [--until-text M]` | 指定状態（既定 idle）まで、または `--until-text M` で画面に文字列 M が出るまで待つ | `iterm2 wait -s <id> --until-text "Remote Control active"` |
 | `split [T] [-h] [--profile P]` | 分割し新 session_id を出力（既定は垂直、`-h` で水平） | `iterm2 split -h` |
-| `tab [--cmd C] [--window] [--in-window W] [--profile P]` | タブを作り新 session_id を出力（既定 current 窓、`--window` で新窓、`--in-window W` で指定窓内） | `iterm2 tab --in-window <wid> --cmd claude` |
+| `tab [-t T] [--cmd C] [--window] [--in-window W] [--profile P]` | タブを作り新 session_id を出力（既定は呼び出し元=current の窓、`--window` で新窓、`--in-window W` で指定窓内）。デーモン起動中でも current 窓はクライアント側で解決する | `iterm2 tab --in-window <wid> --cmd claude` |
 | `focus [T]` | フォーカス移動 | `iterm2 focus worker` |
 | `set-name <name> [-t T] [--json]` | ペインの表示名を設定 | `iterm2 set-name "🟢 worker" -t worker` |
 | `close [T] [--force]` | ペイン/タブを閉じる | `iterm2 close -s <id> --force` |
@@ -81,11 +81,13 @@ iterm2 wait                   # current が idle になるまで待つ
 
 ### `--json` 出力の形
 
+`--json` は**複数フィールドの構造化出力を返すコマンド**にだけ用意する。単一値しか返さないコマンド（`split`/`tab` の新 session_id、`wait` の最終状態）は **stdout に素の値を 1 行**で出すのでそのままパイプで受けられる（`--json` は無い）。
+
 | コマンド | 形 |
 |---|---|
 | `list --json` | `[{"session_id","name","rows","cols","tab_id","window_id","is_active"}, …]` |
 | `read --json` | `{"lines": ["…", …]}` |
-| `set-name --json` | `{"session_id","name"}` |
+| `set-name --json` | `{"session_id","name"}`（デーモン経由でも `session_id` は解決済み id） |
 | `busy --json` | `{"state": "busy" \| "idle" \| "needs-input" \| "unknown"}` |
 | `label ls --json` | `{"<label>": "<session_id>", …}` |
 
@@ -127,7 +129,7 @@ iterm2 daemon --stop  # 停止
 - CLI はデーモンの有無を自動判定し、未起動なら都度接続にフォールバック（**同一コマンド表面**）。
 - `<target>` の current 解決はクライアント側で行うため、デーモンが別プロセスでも各ペインの current を正しく解決。
 - 接続ごとにスレッド処理するため、長い `wait` が他コマンドを塞がない。
-- socket パスは `ITERM2_CLI_SOCKET`（既定 `/tmp/iterm2-cli.sock`、パーミッション 0600）。
+- socket パスは `ITERM2_CLI_SOCKET`（既定 `${XDG_RUNTIME_DIR:-/tmp}/iterm2-cli.sock`、パーミッション 0600）。
 
 ---
 

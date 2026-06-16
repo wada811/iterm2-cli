@@ -14,7 +14,7 @@ from .adapter import SessionInfo
 from .daemon import read_line
 from .detect import State
 from .protocol import decode, encode, make_request
-from .resolver import SessionResolver
+from .resolver import ResolutionError, SessionResolver
 
 
 class DaemonError(Exception):
@@ -98,22 +98,42 @@ class DaemonClient:
 
     def tab(
         self,
+        target: str | None = None,
         *,
         profile: str | None = None,
         command: str | None = None,
         new_window: bool = False,
         window_id: str | None = None,
+        session: str | None = None,
     ) -> str:
+        # 既定（新規窓でも指定窓でもない）は「呼び出し元の窓」に作る。current の解決は
+        # クライアント側で行い（D5）、デーモンには具体的 session_id を from_session で渡す。
+        from_session = None
+        if not new_window and window_id is None:
+            try:
+                from_session = self._resolve(target, session)
+            except ResolutionError:
+                from_session = None  # current を特定できない → デーモン側の current 窓へ
         return self._rpc(
             "window.new_tab",
-            {"profile": profile, "command": command, "new_window": new_window, "window_id": window_id},
+            {
+                "profile": profile,
+                "command": command,
+                "new_window": new_window,
+                "window_id": window_id,
+                "from_session": from_session,
+            },
         )["session_id"]
 
     def focus(self, target: str | None = None, *, session: str | None = None) -> None:
         self._rpc("session.focus", {"session": self._resolve(target, session)})
 
-    def set_name(self, target: str | None, name: str, *, session: str | None = None) -> None:
-        self._rpc("session.set_name", {"session": self._resolve(target, session), "name": name})
+    def set_name(self, target: str | None, name: str, *, session: str | None = None) -> str:
+        # session_id を出力契約（set-name --json）に載せるため、クライアントで解決した
+        # 具体 id を返す（デーモンは set のみ・往復は増やさない）。
+        sid = self._resolve(target, session)
+        self._rpc("session.set_name", {"session": sid, "name": name})
+        return sid
 
     def close(self, target: str | None = None, *, force: bool = False, session: str | None = None) -> None:
         self._rpc("session.close", {"session": self._resolve(target, session), "force": force})

@@ -224,6 +224,5 @@ iterm2-cli/
 - **デーモン経由 `wait` のクライアント無タイムアウト**: デーモンが応答も切断もせず固まると無限待ち（kill 時は接続断で即整形済みエラー）。必要なら socket に wait+余裕のタイムアウトを設定。
 - **デーモンの可観測性**: ログ／PID ファイルが無くデバッグしづらい。`--log` 任意・PID 出力で改善可。
 - **socket cleanup の TOCTOU**: 同一パスへ複数デーモンを並走起動すると稀に socket ファイルを取り違える（is_alive ガードはあるが非アトミック）。
-- **結合テストの穴**: `tab`（現ウィンドウ版）・`wait`（実 busy→idle 遷移）は実機未被覆。
+- **結合テストの穴**: `wait`（実 busy→idle 遷移）は実機未被覆（非破壊で busy を再現しづらいため）。`set_name` / `tab`（既存窓・from_session）は結合スモークで被覆済み。
 - **it2api 全操作の網羅**: profile / arrangement / tmux / 各種 monitor は未実装（完全代替は段階的）。階層操作（move/reorder）も未実装。
-- **公開時の整備**: LICENSE・`pyproject` メタデータ（authors / urls / classifiers）。
