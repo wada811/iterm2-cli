@@ -193,3 +193,23 @@ def test_tab_in_unknown_window_raises():
     fa, c = make()
     with pytest.raises(SessionNotFound):
         c.tab(window_id="w-nonexistent")
+
+
+def test_tab_defaults_to_caller_window():
+    # #2: 既定 tab は呼び出し元（current = $ITERM_SESSION_ID）の窓にタブを作る（D5）。
+    fa = FakeAdapter()
+    fa.add_session(A, "pane-a", window_id="w-caller")
+    c = Controller(fa, SessionResolver(env={"ITERM_SESSION_ID": f"x:{A}"}))
+    new_id = c.tab()
+    new_info = next(s for s in c.list() if s.session_id == new_id)
+    assert new_info.window_id == "w-caller"
+
+
+def test_tab_falls_back_when_current_unresolvable():
+    # current を特定できない（target も session も env も無い）場合は adapter 既定に委ねる
+    # （ResolutionError で落とさない）。
+    fa = FakeAdapter()
+    fa.add_session(A, "pane-a", window_id="w-1")
+    c = Controller(fa, SessionResolver(env={}))
+    new_id = c.tab()  # 例外を出さずに新タブを作る
+    assert new_id in [s.session_id for s in c.list()]

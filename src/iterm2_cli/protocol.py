@@ -89,12 +89,15 @@ def _h_split(c: Controller, p: dict) -> Any:
 
 
 def _h_new_tab(c: Controller, p: dict) -> Any:
+    # from_session はクライアント側で解決済みの「呼び出し元ペイン」（D5）。
+    # 明示渡しすることでデーモンが current を再解決する（デーモン視点の窓に作る）のを防ぐ。
     return {
         "session_id": c.tab(
             profile=p.get("profile"),
             command=p.get("command"),
             new_window=p.get("new_window", False),
             window_id=p.get("window_id"),
+            from_session=p.get("from_session"),
         )
     }
 

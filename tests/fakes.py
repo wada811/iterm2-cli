@@ -60,11 +60,8 @@ class FakeAdapter(ITerm2Adapter):
     def send_text(self, session_id: str, text: str) -> None:
         self._get(session_id).sent.append(text)
 
-    def get_screen_contents(self, session_id: str, max_lines: int | None = None) -> list[str]:
-        lines = list(self._get(session_id).screen)
-        if max_lines is not None:
-            return lines[-max_lines:]
-        return lines
+    def get_screen_contents(self, session_id: str) -> list[str]:
+        return list(self._get(session_id).screen)
 
     def split_pane(self, session_id: str, *, vertical: bool, profile: str | None = None) -> str:
         parent = self._get(session_id)
@@ -79,6 +76,7 @@ class FakeAdapter(ITerm2Adapter):
         command: str | None = None,
         new_window: bool = False,
         window_id: str | None = None,
+        from_session: str | None = None,
     ) -> str:
         if window_id is not None:
             # 指定窓が存在するか（その窓に属する開いたセッションがあるか）を確認。
@@ -89,7 +87,19 @@ class FakeAdapter(ITerm2Adapter):
             new_id = self._new_id("tab")
             self.add_session(new_id, name="", window_id=window_id)
             return new_id
-        new_id = self._new_id("win" if new_window else "tab")
+        if new_window:
+            new_id = self._new_id("win")
+            self.add_session(new_id, name="")
+            return new_id
+        if from_session is not None:
+            # 呼び出し元のペインを含む窓にタブを作る（D5）。
+            src = self._sessions.get(from_session)
+            if src is None or src.closed:
+                raise SessionNotFound(from_session)
+            new_id = self._new_id("tab")
+            self.add_session(new_id, name="", window_id=src.info.window_id)
+            return new_id
+        new_id = self._new_id("tab")
         self.add_session(new_id, name="")
         return new_id
 

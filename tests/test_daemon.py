@@ -6,6 +6,7 @@ FakeAdapter を載せた Controller をデーモンに差し、socket framing〜
 from __future__ import annotations
 
 import shutil
+import socket
 import tempfile
 import threading
 import time
@@ -161,7 +162,7 @@ def test_every_backend_op_round_trips_through_daemon(running_daemon):
         "busy": lambda: c.busy(session=A),
         "wait": lambda: c.wait(session=A, until=State.IDLE, timeout=1, poll_interval=0.05),
         "split": lambda: c.split(session=A),
-        "tab": lambda: c.tab(),
+        "tab": lambda: c.tab(session=A),  # from_session=A（呼び出し元の窓）に作る
         "focus": lambda: c.focus(session=A),
         "set_name": lambda: c.set_name(None, "renamed", session=A),
         "var_set": lambda: c.var_set(None, "user.k", "v", session=A),
@@ -188,8 +189,49 @@ def test_every_backend_op_round_trips_through_daemon(running_daemon):
 def test_set_name_over_socket(running_daemon):
     fa, sockp, *_ = running_daemon
     client = DaemonClient(sockp, SessionResolver())
-    client.set_name(None, "🟢 worker", session=A)
+    # #1 回帰ガード: デーモン経由でも set_name は解決済み session_id を返す
+    # （set-name --json の {"session_id": ...} が null にならない契約）。
+    sid = client.set_name(None, "🟢 worker", session=A)
+    assert sid == A
     assert fa._get(A).info.name == "🟢 worker"
+
+
+def test_tab_uses_caller_window_over_socket(running_daemon):
+    # #2: 既定 tab は「呼び出し元（current）の窓」に作る。デーモン視点の current ではなく、
+    # クライアント側で解決した from_session の窓に作られること（D5）。
+    fa, sockp, *_ = running_daemon
+    fa.add_session("CALLER", "caller", window_id="win-caller", is_active=False)
+    client = DaemonClient(sockp, SessionResolver())
+    new_sid = client.tab(session="CALLER")
+    new_info = next(s for s in client.list() if s.session_id == new_sid)
+    assert new_info.window_id == "win-caller"
+
+
+def test_daemon_closes_stuck_connection(short_sockdir):
+    # #8: 改行を送らず固まったクライアントは conn timeout 後に閉じられる
+    # （スレッドを無期限に占有しない）。
+    fa = FakeAdapter()
+    fa.add_session(A, "pane-a", is_active=True)
+    controller = Controller(fa, SessionResolver())
+    sockp = short_sockdir / "s"
+    d = Daemon(controller, sockp, conn_timeout=0.3)
+    th = threading.Thread(target=d.serve, daemon=True)
+    th.start()
+    for _ in range(200):
+        if is_alive(sockp):
+            break
+        time.sleep(0.01)
+    assert is_alive(sockp)
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.connect(str(sockp))
+        s.settimeout(2.0)
+        # 改行を送らない。タイムアウト後にサーバ側が接続を閉じ、recv が b"" を返す。
+        assert s.recv(1024) == b""
+        s.close()
+    finally:
+        d.stop()
+        th.join(timeout=2)
 
 
 def test_wait_until_text_over_socket(running_daemon):

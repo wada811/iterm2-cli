@@ -42,16 +42,18 @@ class Backend(Protocol):
 
     def tab(
         self,
+        target: str | None = None,
         *,
         profile: str | None = None,
         command: str | None = None,
         new_window: bool = False,
         window_id: str | None = None,
+        session: str | None = None,
     ) -> str: ...
 
     def focus(self, target: str | None = None, *, session: str | None = None): ...
 
-    def set_name(self, target: str | None, name: str, *, session: str | None = None): ...
+    def set_name(self, target: str | None, name: str, *, session: str | None = None) -> str: ...
 
     def close(self, target: str | None = None, *, force: bool = False, session: str | None = None): ...
 

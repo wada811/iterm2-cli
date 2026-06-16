@@ -22,11 +22,10 @@ def test_send_text_recorded():
     assert fa._get(A).sent == ["hello"]
 
 
-def test_get_screen_tail():
+def test_get_screen_contents():
     fa = FakeAdapter()
     fa.add_session(A, screen=["l1", "l2", "l3"])
     assert fa.get_screen_contents(A) == ["l1", "l2", "l3"]
-    assert fa.get_screen_contents(A, max_lines=2) == ["l2", "l3"]
 
 
 def test_split_creates_new_session():
