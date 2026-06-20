@@ -44,8 +44,14 @@ class ITerm2Adapter(abc.ABC):
         """
 
     @abc.abstractmethod
-    def split_pane(self, session_id: str, *, vertical: bool, profile: str | None = None) -> str:
-        """対象を分割し、新しいセッションの session_id を返す。"""
+    def split_pane(
+        self, session_id: str, *, vertical: bool, before: bool = False, profile: str | None = None
+    ) -> str:
+        """対象を分割し、新しいセッションの session_id を返す。
+
+        before=True で新ペインを source の前（垂直分割なら左・水平分割なら上）に作る
+        （iterm2 async_split_pane(before=) に対応）。既定 False は従来どおり後ろ（右/下）。
+        """
 
     @abc.abstractmethod
     def create_tab(

@@ -101,6 +101,20 @@ def test_dispatch_wait_until_text():
     assert resp["ok"] and resp["result"]["state"] == "idle"
 
 
+def test_dispatch_split_before():
+    fa, c = ctl()
+    resp = dispatch(c, make_request("1", "pane.split", {"session": A, "vertical": True, "before": True}))
+    assert resp["ok"]
+    assert resp["result"]["session_id"] in [s.session_id for s in c.list()]
+    assert fa.splits[-1]["before"] is True
+
+
+def test_dispatch_split_default_after():
+    fa, c = ctl()
+    dispatch(c, make_request("1", "pane.split", {"session": A}))
+    assert fa.splits[-1]["before"] is False  # before 省略時は従来どおり後ろ
+
+
 def test_dispatch_new_tab_in_window():
     fa, c = ctl()
     fa.add_session("WIN-SESS", "anchor", window_id="w-1")

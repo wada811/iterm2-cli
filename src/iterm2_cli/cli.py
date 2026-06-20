@@ -192,11 +192,18 @@ def wait(
 def split(
     target: str | None = typer.Argument(None),
     horizontal: bool = typer.Option(False, "-h", "--horizontal", help="水平分割（既定は垂直）"),
+    before: bool = typer.Option(
+        False, "-b", "--before", help="新ペインを source の前（垂直なら左・水平なら上）に作る"
+    ),
     profile: str | None = typer.Option(None, "--profile"),
     session: str | None = typer.Option(None, "-s", "--session"),
 ):
     """ペインを分割し、新 session_id を出力する。"""
-    _run(lambda c: typer.echo(c.split(target, vertical=not horizontal, profile=profile, session=session)))
+    _run(
+        lambda c: typer.echo(
+            c.split(target, vertical=not horizontal, before=before, profile=profile, session=session)
+        )
+    )
 
 
 @app.command()

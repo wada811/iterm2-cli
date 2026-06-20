@@ -94,6 +94,20 @@ def test_split_outputs_new_id(fake):
     r = runner.invoke(cli.app, ["split", "a"])
     assert r.exit_code == 0
     assert r.stdout.strip() in [s.session_id for s in fake.list_sessions()]
+    assert fake.splits[-1]["before"] is False  # 既定は後ろ
+
+
+def test_split_before_flag(fake):
+    r = runner.invoke(cli.app, ["split", "a", "--before"])
+    assert r.exit_code == 0
+    assert r.stdout.strip() in [s.session_id for s in fake.list_sessions()]
+    assert fake.splits[-1]["before"] is True
+
+
+def test_split_before_short_flag(fake):
+    r = runner.invoke(cli.app, ["split", "a", "-b"])
+    assert r.exit_code == 0
+    assert fake.splits[-1]["before"] is True
 
 
 def test_focus_and_close(fake):

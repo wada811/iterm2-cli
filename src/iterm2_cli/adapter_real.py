@@ -130,10 +130,12 @@ class RealAdapter(ITerm2Adapter):
 
         return self._call(_run())
 
-    def split_pane(self, session_id: str, *, vertical: bool, profile: str | None = None) -> str:
+    def split_pane(
+        self, session_id: str, *, vertical: bool, before: bool = False, profile: str | None = None
+    ) -> str:
         async def _run():
             new = await self._session_or_raise(session_id).async_split_pane(
-                vertical=vertical, profile=profile
+                vertical=vertical, before=before, profile=profile
             )
             return new.session_id
 

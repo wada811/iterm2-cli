@@ -109,6 +109,13 @@ def test_split_returns_new_id():
     new_id = c.split(A, vertical=True)
     assert new_id != A
     assert new_id in [s.session_id for s in c.list()]
+    assert fa.splits[-1]["before"] is False  # 既定は後ろ
+
+
+def test_split_before_propagates_to_adapter():
+    fa, c = make()
+    c.split(A, vertical=True, before=True)
+    assert fa.splits[-1]["before"] is True
 
 
 def test_focus_and_close():

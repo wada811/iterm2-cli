@@ -34,6 +34,14 @@ def test_split_creates_new_session():
     new_id = fa.split_pane(A, vertical=True)
     assert new_id != A
     assert new_id in [s.session_id for s in fa.list_sessions()]
+    assert fa.splits[-1]["before"] is False  # 既定は従来どおり後ろ
+
+
+def test_split_records_before():
+    fa = FakeAdapter()
+    fa.add_session(A)
+    fa.split_pane(A, vertical=True, before=True)
+    assert fa.splits[-1] == {"session_id": A, "vertical": True, "before": True, "profile": None}
 
 
 def test_create_tab_returns_new_session():

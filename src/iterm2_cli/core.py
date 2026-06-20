@@ -147,10 +147,16 @@ class Controller:
 
     # --- ライフサイクル ------------------------------------------------
     def split(
-        self, target: str | None = None, *, vertical: bool = True, profile: str | None = None, session: str | None = None
+        self,
+        target: str | None = None,
+        *,
+        vertical: bool = True,
+        before: bool = False,
+        profile: str | None = None,
+        session: str | None = None,
     ) -> str:
         sid = self._resolve(target, session)
-        return self.adapter.split_pane(sid, vertical=vertical, profile=profile)
+        return self.adapter.split_pane(sid, vertical=vertical, before=before, profile=profile)
 
     _UNSET = object()
 

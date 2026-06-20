@@ -85,7 +85,15 @@ def _h_wait(c: Controller, p: dict) -> Any:
 
 
 def _h_split(c: Controller, p: dict) -> Any:
-    return {"session_id": c.split(None, vertical=p.get("vertical", True), profile=p.get("profile"), session=p["session"])}
+    return {
+        "session_id": c.split(
+            None,
+            vertical=p.get("vertical", True),
+            before=p.get("before", False),
+            profile=p.get("profile"),
+            session=p["session"],
+        )
+    }
 
 
 def _h_new_tab(c: Controller, p: dict) -> Any:

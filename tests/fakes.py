@@ -25,6 +25,8 @@ class FakeAdapter(ITerm2Adapter):
         self._sessions: dict[str, FakeSession] = {}
         self._order: list[str] = []
         self._counter = 0
+        # split_pane の引数記録（before/vertical の伝播をテストで検証する）。
+        self.splits: list[dict] = []
         for s in sessions or []:
             self._add(s)
 
@@ -63,8 +65,11 @@ class FakeAdapter(ITerm2Adapter):
     def get_screen_contents(self, session_id: str) -> list[str]:
         return list(self._get(session_id).screen)
 
-    def split_pane(self, session_id: str, *, vertical: bool, profile: str | None = None) -> str:
+    def split_pane(
+        self, session_id: str, *, vertical: bool, before: bool = False, profile: str | None = None
+    ) -> str:
         parent = self._get(session_id)
+        self.splits.append({"session_id": session_id, "vertical": vertical, "before": before, "profile": profile})
         new_id = self._new_id("split")
         self.add_session(new_id, name="", tab_id=parent.info.tab_id, window_id=parent.info.window_id)
         return new_id

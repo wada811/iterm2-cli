@@ -89,11 +89,17 @@ class DaemonClient:
         return State(result["state"])
 
     def split(
-        self, target: str | None = None, *, vertical: bool = True, profile: str | None = None, session: str | None = None
+        self,
+        target: str | None = None,
+        *,
+        vertical: bool = True,
+        before: bool = False,
+        profile: str | None = None,
+        session: str | None = None,
     ) -> str:
         return self._rpc(
             "pane.split",
-            {"session": self._resolve(target, session), "vertical": vertical, "profile": profile},
+            {"session": self._resolve(target, session), "vertical": vertical, "before": before, "profile": profile},
         )["session_id"]
 
     def tab(
