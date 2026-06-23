@@ -11,7 +11,7 @@ import re
 import time
 from collections.abc import Callable
 
-from .adapter import ITerm2Adapter, SessionInfo
+from .adapter import ITerm2Adapter, SessionInfo, SessionNotFound
 from .detect import (
     DEFAULT_BUSY_MARKERS,
     DEFAULT_NEEDS_INPUT_MARKERS,
@@ -68,6 +68,15 @@ class Controller:
     # --- 読み取り系 ----------------------------------------------------
     def list(self) -> list[SessionInfo]:
         return self.adapter.list_sessions()
+
+    def identify(self, target: str | None = None, *, session: str | None = None) -> SessionInfo:
+        # 呼び出し元（current）を解決し、その SessionInfo を list から引く（cmux identify 相当）。
+        # 専用 socket method を持たず list + クライアント側 current 解決の合成にする（D5）。
+        sid = self._resolve(target, session)
+        for s in self.list():
+            if s.session_id == sid:
+                return s
+        raise SessionNotFound(sid)
 
     def read(self, target: str | None = None, *, tail: int | None = None, session: str | None = None) -> list[str]:
         sid = self._resolve(target, session)

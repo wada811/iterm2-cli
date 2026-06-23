@@ -156,6 +156,7 @@ def test_every_backend_op_round_trips_through_daemon(running_daemon):
     # 各 Backend 操作を 1 回ずつ実行（close は A を消すので最後）。idle セッションで wait も即返る。
     driven = {
         "list": lambda: c.list(),
+        "identify": lambda: c.identify(session=A),
         "send": lambda: c.send(None, "x", session=A),
         "send_key": lambda: c.send_key(None, ["enter"], session=A),
         "read": lambda: c.read(session=A),

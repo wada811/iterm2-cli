@@ -10,7 +10,7 @@ from __future__ import annotations
 import socket
 from pathlib import Path
 
-from .adapter import SessionInfo
+from .adapter import SessionInfo, SessionNotFound
 from .daemon import read_line
 from .detect import State
 from .protocol import decode, encode, make_request
@@ -53,6 +53,14 @@ class DaemonClient:
     # --- Controller と同じ表面 ----------------------------------------
     def list(self) -> list[SessionInfo]:
         return [SessionInfo(**d) for d in self._rpc("session.list", {})["sessions"]]
+
+    def identify(self, target: str | None = None, *, session: str | None = None) -> SessionInfo:
+        # current 解決はクライアント側（D5）、情報取得は session.list を再利用（専用 method 不要）。
+        sid = self._resolve(target, session)
+        for s in self.list():
+            if s.session_id == sid:
+                return s
+        raise SessionNotFound(sid)
 
     def send(self, target: str | None, text: str, *, session: str | None = None) -> None:
         self._rpc("session.send_text", {"session": self._resolve(target, session), "text": text})
