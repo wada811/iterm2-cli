@@ -103,11 +103,14 @@ def _h_new_tab(c: Controller, p: dict) -> Any:
         "session_id": c.tab(
             profile=p.get("profile"),
             command=p.get("command"),
-            new_window=p.get("new_window", False),
             window_id=p.get("window_id"),
             from_session=p.get("from_session"),
         )
     }
+
+
+def _h_new_window(c: Controller, p: dict) -> Any:
+    return {"session_id": c.window(profile=p.get("profile"), command=p.get("command"))}
 
 
 def _h_focus(c: Controller, p: dict) -> Any:
@@ -152,6 +155,7 @@ HANDLERS: dict[str, Callable[[Controller, dict], Any]] = {
     "session.set_var": _h_set_var,
     "pane.split": _h_split,
     "window.new_tab": _h_new_tab,
+    "window.new": _h_new_window,
     "system.ping": _h_ping,
 }
 

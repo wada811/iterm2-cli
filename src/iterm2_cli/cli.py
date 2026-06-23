@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
+from enum import Enum
 
 import typer
 
@@ -219,37 +220,51 @@ def wait(
     _run(run)
 
 
-@app.command()
-def split(
-    target: str | None = typer.Argument(None),
-    horizontal: bool = typer.Option(False, "-h", "--horizontal", help="水平分割（既定は垂直）"),
-    before: bool = typer.Option(
-        False, "-b", "--before", help="新ペインを source の前（垂直なら左・水平なら上）に作る"
+class SplitDirection(str, Enum):
+    """新ペインを source のどちら側に作るか（cmux `new-split <dir>` 準拠）。"""
+
+    right = "right"  # 垂直分割・後ろ（既定）
+    left = "left"  # 垂直分割・前
+    down = "down"  # 水平分割・後ろ
+    up = "up"  # 水平分割・前
+
+
+@app.command(name="new-split")
+def new_split(
+    direction: SplitDirection = typer.Argument(
+        SplitDirection.right, help="分割方向 right/left/down/up（既定 right）"
     ),
+    target: str | None = typer.Option(None, "-t", "--target", help="分割元ペイン（省略時 current）"),
     profile: str | None = typer.Option(None, "--profile"),
     session: str | None = typer.Option(None, "-s", "--session"),
 ):
-    """ペインを分割し、新 session_id を出力する。"""
+    """ペインを分割し、新 session_id を出力する。
+
+    方向は cmux 準拠の位置引数: right/left=垂直分割（左右）、down/up=水平分割（上下）。
+    left/up は source の前（左/上）に新ペインを作る。
+    """
+    vertical = direction in (SplitDirection.right, SplitDirection.left)
+    before = direction in (SplitDirection.left, SplitDirection.up)
     _run(
         lambda c: typer.echo(
-            c.split(target, vertical=not horizontal, before=before, profile=profile, session=session)
+            c.split(target, vertical=vertical, before=before, profile=profile, session=session)
         )
     )
 
 
-@app.command()
-def tab(
+@app.command(name="new-tab")
+def new_tab(
     target: str | None = typer.Option(None, "-t", "--target", help="呼び出し元ペイン（省略時 current）"),
     profile: str | None = typer.Option(None, "--profile"),
     command: str | None = typer.Option(None, "--cmd"),
-    new_window: bool = typer.Option(False, "--window", help="新規ウィンドウ"),
     in_window: str | None = typer.Option(None, "--in-window", help="既存ウィンドウ（window_id）内にタブを作る"),
     session: str | None = typer.Option(None, "-s", "--session", help="session_id を明示"),
 ):
     """タブを作り、新 session_id を出力する。
 
-    既定は呼び出し元（current）のウィンドウ。--window で新規ウィンドウ、--in-window <wid> で指定ウィンドウ内。
+    既定は呼び出し元（current）のウィンドウ。--in-window <wid> で指定ウィンドウ内に作る。
     デーモン起動中でも current 窓はクライアント側で解決するため、呼び出し元の窓にタブが作られる（D5）。
+    新規ウィンドウを作るには `new-window` を使う。
     """
     _run(
         lambda c: typer.echo(
@@ -257,12 +272,20 @@ def tab(
                 target,
                 profile=profile,
                 command=command,
-                new_window=new_window,
                 window_id=in_window,
                 session=session,
             )
         )
     )
+
+
+@app.command(name="new-window")
+def new_window(
+    profile: str | None = typer.Option(None, "--profile"),
+    command: str | None = typer.Option(None, "--cmd"),
+):
+    """新規ウィンドウを作り、その最初のセッションの session_id を出力する。"""
+    _run(lambda c: typer.echo(c.window(profile=profile, command=command)))
 
 
 @app.command()
@@ -274,14 +297,14 @@ def focus(
     _run(lambda c: c.focus(target, session=session))
 
 
-@app.command(name="set-name")
-def set_name(
+@app.command(name="rename")
+def rename(
     name: str = typer.Argument(..., help="ペインの表示名"),
     target: str | None = typer.Option(None, "-t", "--target"),
     session: str | None = typer.Option(None, "-s", "--session"),
     json_out: bool = typer.Option(False, "--json"),
 ):
-    """ペイン（セッション）の表示名を設定する。"""
+    """ペイン（セッション）の表示名を変更する。"""
 
     def run(c):
         sid = c.set_name(target, name, session=session)

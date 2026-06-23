@@ -80,3 +80,45 @@
 - **決定**: 実害の小さい改善は実装せず、[design §11](./design.md) に効果と理由を 1〜2 行で記録する。
 - **理由**: 「必要時に直す」だけだと据え置きの根拠が失われ、再調査や「未対応＝バグ」の誤認を招く。
   一方で投機的 TODO の肥大は鮮度を損なうので、実在項目だけ最小限に残す。
+
+## D10. 「タブを作る」と「窓を作る」は別コマンド（tab / window）
+
+- **決定**: 新規ウィンドウ作成は `tab --window` フラグではなく独立した `window` コマンド（socket `window.new`）に
+  分離する。`tab` は「タブを作る」一操作に専念し、`--in-window <wid>` は**行き先のパラメータ**として残す
+  （既定=current 窓、指定でその窓）。
+- **理由**: `tab --window` は内部で `Window.async_create`（窓を作る）を呼び、`window.new_tab` という単一 socket
+  method が 2 操作を兼ねていた。これは「1 コマンド 1 操作」（UNIX 哲学）と不変条件 #2（CLI↔socket を 1:1・
+  socket method は一操作）の両方に反する。iTerm2 API も `async_create_tab` と `Window.async_create` で分かれており、
+  分離するとコマンド・socket・API の三層が素直に対応する。
+- **`--in-window` を残した理由**: これは別操作ではなく「タブをどの窓に作るか」の場所指定（`cp src dst` の dst と同類）。
+  current 既定の上書きにすぎないので `tab` の一操作性を壊さない。`tab` が窓ゼロの環境で呼ばれた場合のみ、行き先が
+  無いためやむを得ず新規窓を作る（フォールバック・[design §5](./design.md) 注記）。
+- **退けた案**:
+  - **`tab --window` をエイリアスで残す**（後方互換）: 粗い表面を温存し、`--window`/`--in-window` の行き先衝突
+    （排他チェックが必要になる）も残る。`Development Status :: Alpha` 段階で利用者が限られるため、クリーンな
+    破壊的変更を選んだ。再検討トリガー = 外部利用者が `tab --window` に依存していると判明したとき。
+- 参照: [design §5 socket 契約表](./design.md) / 契約テスト `DRIVEN`（`tests/test_daemon.py`）。
+- **後日の改名**: D11（後述）で `tab`→`new-tab` / `window`→`new-window` に改名（命名規約の統一）。本決定（窓作成の分離）自体は不変。
+
+## D11. コマンド命名は cmux / tmux 準拠の「動詞-名詞」
+
+- **決定**: ライフサイクル系コマンドは cmux / tmux に倣い **`動詞-名詞` のハイフン結合フラット名**に統一する。
+  `window`→`new-window`、`tab`→`new-tab`、`split`→`new-split`、`set-name`→`rename`。
+  操作系（current ペインに作用）は **素の動詞**のまま（`send` / `send-key` / `read` / `wait` / `busy` / `focus`）、
+  状態メタ（`set-status` / `set-progress`）は cmux と既に一致。加えて current を特定する `identify` を新設。
+- **理由**: 改名前は3つの文法が混在していた——create-名詞（`tab`/`window`）・裸の動詞（`split`）・grouped（`var`/`label`）。
+  特に「子オブジェクトを作る」操作が `split`/`tab`/`window` でバラバラだった。本ツールは並列エージェントの
+  オーケストレーション基盤であり、利用者の参照モデルが cmux。cmux も tmux も「ライフサイクル=動詞-名詞、操作=裸の動詞」
+  で一貫しており、これに揃えると 1 ルールで発見性（`new-<TAB>` で作成系が揃う）と一貫性が出る。
+- **`identify` を socket method なしにした理由**: current 解決はクライアント側（D5）で行い、情報は `session.list` の
+  再利用で足りる。専用 method を足すと往復が増え D5 とも矛盾するため、CLI 層の合成（resolve + list）にした。
+  これは「CLI↔socket を 1:1」の明示的な例外（[design §5](./design.md) の表に「socket method なし」と記載）。
+- **`new-split` の方向**: cmux `new-split <dir>` に倣い位置引数 `right`/`left`/`down`/`up` を採用（旧 `-h`/`-b` フラグを置換）。
+  left/right=垂直分割、down/up=水平分割、left/up=source の前側。1 引数で「分割軸＋前後」を表現でき、フラグ 2 つより明快。
+- **退けた案**:
+  - **`object verb` のネスト型**（`window new` / `pane split`、kubectl/docker 流）: 一見クリーンだが、参照モデルの
+    cmux も tmux も採らない流儀で、ホットパス（`send`/`read`）が `session send` のように冗長化する。エージェントが
+    叩く頻度の高い操作を素の動詞に保ちたいので不採用。
+  - **現状フラット名のまま据え置き**: create の3パターン不揃いが残り、発見性も上がらない。`Alpha` 段階で破壊的改名の
+    コストが小さい今が好機と判断。再検討トリガー = 外部利用者が旧名（`tab`/`split` 等）に依存していると判明したとき。
+- 参照: [design §5 socket 契約表](./design.md) / [README コマンド表](../README.md) / 契約テスト `DRIVEN`。

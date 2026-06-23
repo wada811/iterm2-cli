@@ -79,7 +79,6 @@ class FakeAdapter(ITerm2Adapter):
         *,
         profile: str | None = None,
         command: str | None = None,
-        new_window: bool = False,
         window_id: str | None = None,
         from_session: str | None = None,
     ) -> str:
@@ -92,10 +91,9 @@ class FakeAdapter(ITerm2Adapter):
             new_id = self._new_id("tab")
             self.add_session(new_id, name="", window_id=window_id)
             return new_id
-        if new_window:
-            new_id = self._new_id("win")
-            self.add_session(new_id, name="")
-            return new_id
+        if not [i for i in self._order if not self._sessions[i].closed]:
+            # 窓が 1 つも無い → タブの行き先が無いので新規ウィンドウを作る（フォールバック）。
+            return self.create_window(profile=profile, command=command)
         if from_session is not None:
             # 呼び出し元のペインを含む窓にタブを作る（D5）。
             src = self._sessions.get(from_session)
@@ -106,6 +104,12 @@ class FakeAdapter(ITerm2Adapter):
             return new_id
         new_id = self._new_id("tab")
         self.add_session(new_id, name="")
+        return new_id
+
+    def create_window(self, *, profile: str | None = None, command: str | None = None) -> str:
+        # 新規ウィンドウは一意な window_id を割り当てる（他の窓と混ざらないように）。
+        new_id = self._new_id("win")
+        self.add_session(new_id, name="", window_id=f"win-{new_id}")
         return new_id
 
     def set_name(self, session_id: str, name: str) -> None:

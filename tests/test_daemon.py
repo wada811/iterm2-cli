@@ -164,6 +164,7 @@ def test_every_backend_op_round_trips_through_daemon(running_daemon):
         "wait": lambda: c.wait(session=A, until=State.IDLE, timeout=1, poll_interval=0.05),
         "split": lambda: c.split(session=A),
         "tab": lambda: c.tab(session=A),  # from_session=A（呼び出し元の窓）に作る
+        "window": lambda: c.window(),  # 新規ウィンドウ（window.new）
         "focus": lambda: c.focus(session=A),
         "set_name": lambda: c.set_name(None, "renamed", session=A),
         "var_set": lambda: c.var_set(None, "user.k", "v", session=A),

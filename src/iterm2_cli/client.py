@@ -116,14 +116,13 @@ class DaemonClient:
         *,
         profile: str | None = None,
         command: str | None = None,
-        new_window: bool = False,
         window_id: str | None = None,
         session: str | None = None,
     ) -> str:
-        # 既定（新規窓でも指定窓でもない）は「呼び出し元の窓」に作る。current の解決は
+        # 既定（指定窓でない）は「呼び出し元の窓」に作る。current の解決は
         # クライアント側で行い（D5）、デーモンには具体的 session_id を from_session で渡す。
         from_session = None
-        if not new_window and window_id is None:
+        if window_id is None:
             try:
                 from_session = self._resolve(target, session)
             except ResolutionError:
@@ -133,11 +132,13 @@ class DaemonClient:
             {
                 "profile": profile,
                 "command": command,
-                "new_window": new_window,
                 "window_id": window_id,
                 "from_session": from_session,
             },
         )["session_id"]
+
+    def window(self, *, profile: str | None = None, command: str | None = None) -> str:
+        return self._rpc("window.new", {"profile": profile, "command": command})["session_id"]
 
     def focus(self, target: str | None = None, *, session: str | None = None) -> None:
         self._rpc("session.focus", {"session": self._resolve(target, session)})

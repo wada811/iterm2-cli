@@ -146,7 +146,6 @@ class RealAdapter(ITerm2Adapter):
         *,
         profile: str | None = None,
         command: str | None = None,
-        new_window: bool = False,
         window_id: str | None = None,
         from_session: str | None = None,
     ) -> str:
@@ -159,7 +158,9 @@ class RealAdapter(ITerm2Adapter):
                     raise SessionNotFound(window_id)
                 tab = await window.async_create_tab(profile=profile, command=command)
                 return tab.current_session.session_id
-            if new_window or not self._app.terminal_windows:
+            if not self._app.terminal_windows:
+                # タブの行き先（窓）が 1 つも無いので、やむを得ず新規ウィンドウを作る
+                # （フォールバック）。明示的な新規ウィンドウ作成は create_window。
                 window = await iterm2.Window.async_create(
                     self._connection, profile=profile, command=command
                 )
@@ -173,6 +174,17 @@ class RealAdapter(ITerm2Adapter):
                 window = self._app.current_terminal_window or self._app.terminal_windows[0]
             tab = await window.async_create_tab(profile=profile, command=command)
             return tab.current_session.session_id
+
+        return self._call(_run())
+
+    def create_window(self, *, profile: str | None = None, command: str | None = None) -> str:
+        async def _run():
+            import iterm2
+
+            window = await iterm2.Window.async_create(
+                self._connection, profile=profile, command=command
+            )
+            return window.current_tab.current_session.session_id
 
         return self._call(_run())
 

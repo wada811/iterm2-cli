@@ -59,18 +59,23 @@ class ITerm2Adapter(abc.ABC):
         *,
         profile: str | None = None,
         command: str | None = None,
-        new_window: bool = False,
         window_id: str | None = None,
         from_session: str | None = None,
     ) -> str:
-        """新しいタブ（または new_window でウィンドウ）を作り、新 session_id を返す。
+        """既存ウィンドウ内に新しいタブを作り、新 session_id を返す。
 
         - window_id 指定時はその既存ウィンドウ内にタブを作る（無ければ SessionNotFound）。
         - from_session 指定時はその session を含むウィンドウにタブを作る（無ければ
           SessionNotFound）。呼び出し元（クライアント）の current 窓を指すための引数で、
           デーモン視点の current 窓に作ってしまう D5 違反を避ける。
         - いずれも未指定なら adapter 視点の current 窓（フォールバック）。
+        - 窓が 1 つも無い場合のみ新規ウィンドウを作る（タブの行き先が無いため）。
+          明示的な新規ウィンドウ作成は create_window を使う。
         """
+
+    @abc.abstractmethod
+    def create_window(self, *, profile: str | None = None, command: str | None = None) -> str:
+        """新規ウィンドウを作り、その最初のセッションの session_id を返す。"""
 
     @abc.abstractmethod
     def set_name(self, session_id: str, name: str) -> None:

@@ -48,10 +48,11 @@ class Backend(Protocol):
         *,
         profile: str | None = None,
         command: str | None = None,
-        new_window: bool = False,
         window_id: str | None = None,
         session: str | None = None,
     ) -> str: ...
+
+    def window(self, *, profile: str | None = None, command: str | None = None) -> str: ...
 
     def focus(self, target: str | None = None, *, session: str | None = None): ...
 

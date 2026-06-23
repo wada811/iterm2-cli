@@ -35,6 +35,9 @@ def _markers_from_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
 
 
 class Controller:
+    # tab() の from_session 引数で「明示渡しの None」と「未指定」を区別する番兵。
+    _UNSET = object()
+
     def __init__(
         self,
         adapter: ITerm2Adapter,
@@ -167,15 +170,12 @@ class Controller:
         sid = self._resolve(target, session)
         return self.adapter.split_pane(sid, vertical=vertical, before=before, profile=profile)
 
-    _UNSET = object()
-
     def tab(
         self,
         target: str | None = None,
         *,
         profile: str | None = None,
         command: str | None = None,
-        new_window: bool = False,
         window_id: str | None = None,
         session: str | None = None,
         from_session: object = _UNSET,
@@ -185,7 +185,7 @@ class Controller:
         # このプロセスで解決し「呼び出し元の窓」にタブを作る（D5: current 解決はクライアント側）。
         if from_session is Controller._UNSET:
             from_session = None
-            if not new_window and window_id is None:
+            if window_id is None:
                 try:
                     from_session = self._resolve(target, session)
                 except ResolutionError:
@@ -194,10 +194,12 @@ class Controller:
         return self.adapter.create_tab(
             profile=profile,
             command=command,
-            new_window=new_window,
             window_id=window_id,
             from_session=from_session,
         )
+
+    def window(self, *, profile: str | None = None, command: str | None = None) -> str:
+        return self.adapter.create_window(profile=profile, command=command)
 
     def focus(self, target: str | None = None, *, session: str | None = None) -> str:
         sid = self._resolve(target, session)
