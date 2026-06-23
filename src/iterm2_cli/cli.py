@@ -24,8 +24,10 @@ from .resolver import ResolutionError, SessionResolver
 app = typer.Typer(no_args_is_help=True, help="iTerm2 を操作する CLI")
 var_app = typer.Typer(no_args_is_help=True, help="セッション変数 get/set")
 label_app = typer.Typer(no_args_is_help=True, help="label ↔ session_id マッピング")
+daemon_app = typer.Typer(no_args_is_help=True, help="常駐デーモンの起動/停止")
 app.add_typer(var_app, name="var")
 app.add_typer(label_app, name="label")
+app.add_typer(daemon_app, name="daemon")
 
 
 def make_controller() -> Backend:
@@ -355,27 +357,16 @@ def ping():
     _run(run)
 
 
-@app.command()
-def daemon(
+@daemon_app.command("start")
+def daemon_start(
     socket_path: str | None = typer.Option(None, "--socket", help="socket パス"),
-    stop: bool = typer.Option(False, "--stop", help="起動中のデーモンを停止"),
 ):
-    """常駐デーモンを起動する（接続を保持し低レイテンシ）。--stop で停止。"""
+    """常駐デーモンを起動する（接続を保持し低レイテンシ）。"""
     import signal
 
     from .daemon import Daemon, default_socket_path, is_alive
 
     path = socket_path or str(default_socket_path())
-
-    if stop:
-        from .client import DaemonClient
-
-        if is_alive(path):
-            DaemonClient(path).stop_daemon()
-            typer.echo("stopped")
-        else:
-            typer.echo("not running")
-        return
 
     if is_alive(path):
         typer.secho(f"既に起動しています: {path}", fg=typer.colors.YELLOW, err=True)
@@ -395,6 +386,22 @@ def daemon(
     typer.echo(f"iterm2-cli daemon listening: {path}")
     d.serve()
     typer.echo("daemon stopped")
+
+
+@daemon_app.command("stop")
+def daemon_stop(
+    socket_path: str | None = typer.Option(None, "--socket", help="socket パス"),
+):
+    """起動中のデーモンを停止する。"""
+    from .client import DaemonClient
+    from .daemon import default_socket_path, is_alive
+
+    path = socket_path or str(default_socket_path())
+    if is_alive(path):
+        DaemonClient(path).stop_daemon()
+        typer.echo("stopped")
+    else:
+        typer.echo("not running")
 
 
 if __name__ == "__main__":
