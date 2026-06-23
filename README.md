@@ -44,10 +44,15 @@ iterm2 wait                   # current が idle になるまで待つ
 
 ## コマンドリファレンス
 
+> **0.0.1 から更新する方へ**: コマンド名が一部変わりました（`split`→`new-split`、`tab`→`new-tab`、
+> `tab --window`→`new-window`、`set-name`→`rename`、`daemon --stop`→`daemon stop`）。移行は
+> [MIGRATION.md](./MIGRATION.md) を参照。
+
 `<target>`（対象ペイン）の指定は次の規則:
 
-- **ペイロードを持つコマンド**（send / send-key / var / set-status / set-progress）→ `-t/--target`
-- **対象のみのコマンド**（read / busy / wait / split / focus / close）→ 位置引数
+- **対象を `-t/--target` で渡すコマンド**（send / send-key / var / set-status / set-progress / rename / new-split / new-tab / identify）
+- **対象を位置引数で渡すコマンド**（read / busy / wait / focus / close）
+  - 省略可。`new-split` の位置引数は対象ではなく**方向**（right/left/down/up）
 - いずれも **省略時は current**（`$ITERM_SESSION_ID`）。`-s/--session <id>` で session_id を直接指定。
 - `<target>` 解決順: `-s <id>` → ラベル → current。
 
@@ -191,6 +196,7 @@ socket のプリミティブの上に**薄いラッパーとして外側に**載
 | `src/iterm2_cli/daemon.py` / `client.py` / `protocol.py` | デーモン / クライアント / socket プロトコル |
 | `tests/` | ユニット（FakeAdapter）／`tests/integration/`（実 iTerm2・オプトイン） |
 | `docs/` | [requirements](./docs/requirements.md) / [design](./docs/design.md) / [decisions](./docs/decisions.md)（設計思想・なぜ）/ [research](./docs/research.md) |
+| [MIGRATION.md](./MIGRATION.md) | 0.0.1 からの破壊的変更（コマンド改名）の移行ガイド |
 | [CLAUDE.md](./CLAUDE.md) | 開発ガイド（手順・設計不変条件・テスト戦略） |
 
 ---

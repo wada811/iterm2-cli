@@ -30,6 +30,7 @@
 ### Added
 
 - `identify` コマンド（cmux 相当）: 呼び出し元（current）の session を特定して出力（`--json` で全フィールド＋割当 label）。current 解決はクライアント側（D5）、情報は `session.list` を再利用し専用 socket method を持たない。
+- `MIGRATION.md`: 0.0.1 からの破壊的変更（コマンド改名）の移行ガイド。
 - CI（GitHub Actions）で `pytest` + `ruff` を push/PR 時に実行。
 - 結合スモークに `set_name` / `create_tab`（既存窓・from_session）を追加。
 - `CONTRIBUTING.md` / `CHANGELOG.md`、`pyproject` の urls / classifiers / keywords。
