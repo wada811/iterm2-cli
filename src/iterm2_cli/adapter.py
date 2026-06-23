@@ -36,18 +36,50 @@ class ITerm2Adapter(abc.ABC):
         """ユーザーが打鍵したかのようにテキスト（制御文字含む）を送る。"""
 
     @abc.abstractmethod
-    def get_screen_contents(self, session_id: str, max_lines: int | None = None) -> list[str]:
-        """現在の画面行を上から順に返す。max_lines 指定時は末尾 N 行。"""
+    def get_screen_contents(self, session_id: str) -> list[str]:
+        """現在の画面行を上から順に返す（全行）。
+
+        末尾空行の trim・``--tail`` は Controller 側で行う（trim を tail より先に
+        適用する仕様のため、取得は常に全行）。
+        """
 
     @abc.abstractmethod
-    def split_pane(self, session_id: str, *, vertical: bool, profile: str | None = None) -> str:
-        """対象を分割し、新しいセッションの session_id を返す。"""
+    def split_pane(
+        self, session_id: str, *, vertical: bool, before: bool = False, profile: str | None = None
+    ) -> str:
+        """対象を分割し、新しいセッションの session_id を返す。
+
+        before=True で新ペインを source の前（垂直分割なら左・水平分割なら上）に作る
+        （iterm2 async_split_pane(before=) に対応）。既定 False は従来どおり後ろ（右/下）。
+        """
 
     @abc.abstractmethod
     def create_tab(
-        self, *, profile: str | None = None, command: str | None = None, new_window: bool = False
+        self,
+        *,
+        profile: str | None = None,
+        command: str | None = None,
+        window_id: str | None = None,
+        from_session: str | None = None,
     ) -> str:
-        """新しいタブ（または new_window でウィンドウ）を作り、新 session_id を返す。"""
+        """既存ウィンドウ内に新しいタブを作り、新 session_id を返す。
+
+        - window_id 指定時はその既存ウィンドウ内にタブを作る（無ければ SessionNotFound）。
+        - from_session 指定時はその session を含むウィンドウにタブを作る（無ければ
+          SessionNotFound）。呼び出し元（クライアント）の current 窓を指すための引数で、
+          デーモン視点の current 窓に作ってしまう D5 違反を避ける。
+        - いずれも未指定なら adapter 視点の current 窓（フォールバック）。
+        - 窓が 1 つも無い場合のみ新規ウィンドウを作る（タブの行き先が無いため）。
+          明示的な新規ウィンドウ作成は create_window を使う。
+        """
+
+    @abc.abstractmethod
+    def create_window(self, *, profile: str | None = None, command: str | None = None) -> str:
+        """新規ウィンドウを作り、その最初のセッションの session_id を返す。"""
+
+    @abc.abstractmethod
+    def set_name(self, session_id: str, name: str) -> None:
+        """セッション（ペイン）の表示名を設定する。"""
 
     @abc.abstractmethod
     def activate(self, session_id: str) -> None:

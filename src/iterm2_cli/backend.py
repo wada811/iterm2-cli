@@ -17,6 +17,8 @@ from .detect import State
 class Backend(Protocol):
     def list(self) -> list[SessionInfo]: ...
 
+    def identify(self, target: str | None = None, *, session: str | None = None) -> SessionInfo: ...
+
     def send(self, target: str | None, text: str, *, session: str | None = None): ...
 
     def send_key(self, target: str | None, keys: list[str], *, session: str | None = None): ...
@@ -30,6 +32,7 @@ class Backend(Protocol):
         target: str | None = None,
         *,
         until: State = State.IDLE,
+        until_text: str | None = None,
         timeout: float = 30.0,
         poll_interval: float = 0.5,
         session: str | None = None,
@@ -39,9 +42,21 @@ class Backend(Protocol):
         self, target: str | None = None, *, vertical: bool = True, profile: str | None = None, session: str | None = None
     ) -> str: ...
 
-    def tab(self, *, profile: str | None = None, command: str | None = None, new_window: bool = False) -> str: ...
+    def tab(
+        self,
+        target: str | None = None,
+        *,
+        profile: str | None = None,
+        command: str | None = None,
+        window_id: str | None = None,
+        session: str | None = None,
+    ) -> str: ...
+
+    def window(self, *, profile: str | None = None, command: str | None = None) -> str: ...
 
     def focus(self, target: str | None = None, *, session: str | None = None): ...
+
+    def set_name(self, target: str | None, name: str, *, session: str | None = None) -> str: ...
 
     def close(self, target: str | None = None, *, force: bool = False, session: str | None = None): ...
 

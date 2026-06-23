@@ -22,11 +22,10 @@ def test_send_text_recorded():
     assert fa._get(A).sent == ["hello"]
 
 
-def test_get_screen_tail():
+def test_get_screen_contents():
     fa = FakeAdapter()
     fa.add_session(A, screen=["l1", "l2", "l3"])
     assert fa.get_screen_contents(A) == ["l1", "l2", "l3"]
-    assert fa.get_screen_contents(A, max_lines=2) == ["l2", "l3"]
 
 
 def test_split_creates_new_session():
@@ -35,6 +34,14 @@ def test_split_creates_new_session():
     new_id = fa.split_pane(A, vertical=True)
     assert new_id != A
     assert new_id in [s.session_id for s in fa.list_sessions()]
+    assert fa.splits[-1]["before"] is False  # 既定は従来どおり後ろ
+
+
+def test_split_records_before():
+    fa = FakeAdapter()
+    fa.add_session(A)
+    fa.split_pane(A, vertical=True, before=True)
+    assert fa.splits[-1] == {"session_id": A, "vertical": True, "before": True, "profile": None}
 
 
 def test_create_tab_returns_new_session():
@@ -74,3 +81,24 @@ def test_unknown_session_raises():
     fa = FakeAdapter()
     with pytest.raises(SessionNotFound):
         fa.get_screen_contents("missing")
+
+
+def test_set_name_updates_info():
+    fa = FakeAdapter()
+    fa.add_session(A, "old")
+    fa.set_name(A, "new")
+    assert next(s for s in fa.list_sessions() if s.session_id == A).name == "new"
+
+
+def test_create_tab_in_window_inherits_window_id():
+    fa = FakeAdapter()
+    fa.add_session(A, window_id="w-1")
+    new_id = fa.create_tab(window_id="w-1")
+    new_info = next(s for s in fa.list_sessions() if s.session_id == new_id)
+    assert new_info.window_id == "w-1"
+
+
+def test_create_tab_in_unknown_window_raises():
+    fa = FakeAdapter()
+    with pytest.raises(SessionNotFound):
+        fa.create_tab(window_id="missing")

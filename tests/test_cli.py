@@ -90,10 +90,50 @@ def test_idle_exit_zero(fake):
     assert r.exit_code == 0
 
 
-def test_split_outputs_new_id(fake):
-    r = runner.invoke(cli.app, ["split", "a"])
+def test_new_split_default_right(fake):
+    # 既定 right = 垂直分割・後ろ（cmux 準拠の位置引数）。
+    r = runner.invoke(cli.app, ["new-split", "-t", "a"])
     assert r.exit_code == 0
     assert r.stdout.strip() in [s.session_id for s in fake.list_sessions()]
+    assert fake.splits[-1] == {"session_id": A, "vertical": True, "before": False, "profile": None}
+
+
+def test_new_split_left_is_vertical_before(fake):
+    r = runner.invoke(cli.app, ["new-split", "left", "-t", "a"])
+    assert r.exit_code == 0
+    assert fake.splits[-1]["vertical"] is True
+    assert fake.splits[-1]["before"] is True
+
+
+def test_new_split_up_is_horizontal_before(fake):
+    r = runner.invoke(cli.app, ["new-split", "up", "-t", "a"])
+    assert r.exit_code == 0
+    assert fake.splits[-1]["vertical"] is False
+    assert fake.splits[-1]["before"] is True
+
+
+def test_new_split_down_is_horizontal_after(fake):
+    r = runner.invoke(cli.app, ["new-split", "down", "-t", "a"])
+    assert r.exit_code == 0
+    assert fake.splits[-1]["vertical"] is False
+    assert fake.splits[-1]["before"] is False
+
+
+def test_new_split_rejects_bad_direction(fake):
+    r = runner.invoke(cli.app, ["new-split", "sideways", "-t", "a"])
+    assert r.exit_code == 2  # enum 外の方向は typer が弾く
+
+
+def test_new_window_creates_new_window(fake):
+    # 新規ウィンドウ作成は new-tab ではなく独立した new-window（1 操作 1 コマンド）。
+    before = {s.session_id for s in fake.list_sessions()}
+    r = runner.invoke(cli.app, ["new-window"])
+    assert r.exit_code == 0
+    new_sid = r.stdout.strip()
+    assert new_sid not in before
+    new_info = next(s for s in fake.list_sessions() if s.session_id == new_sid)
+    # 既存セッション（fixture）とは別の窓に作られる。
+    assert new_info.window_id not in {s.window_id for s in fake.list_sessions() if s.session_id != new_sid}
 
 
 def test_focus_and_close(fake):
@@ -126,3 +166,71 @@ def test_ping(fake):
     r = runner.invoke(cli.app, ["ping"])
     assert r.exit_code == 0
     assert "ok" in r.stdout
+
+
+def test_rename(fake):
+    r = runner.invoke(cli.app, ["rename", "🟢 worker", "-t", "a"])
+    assert r.exit_code == 0
+    assert fake._get(A).info.name == "🟢 worker"
+
+
+def test_rename_json(fake):
+    r = runner.invoke(cli.app, ["rename", "renamed", "-t", "a", "--json"])
+    assert r.exit_code == 0
+    data = json.loads(r.stdout)
+    assert data == {"session_id": A, "name": "renamed"}
+
+
+def test_identify_current(fake):
+    # current（fixture の env ITERM_SESSION_ID=A）を特定し、割当 label も返す（cmux identify 相当）。
+    runner.invoke(cli.app, ["label", "set", "worker", A])
+    r = runner.invoke(cli.app, ["identify", "--json"])
+    assert r.exit_code == 0
+    data = json.loads(r.stdout)
+    assert data["session_id"] == A
+    assert data["name"] == "pane-a"
+    assert data["labels"] == ["worker"]
+
+
+def test_identify_human_output(fake):
+    r = runner.invoke(cli.app, ["identify"])
+    assert r.exit_code == 0
+    assert A in r.stdout
+
+
+def test_wait_until_text_found(fake):
+    fake._get(A).screen = ["Remote Control active"]
+    r = runner.invoke(cli.app, ["wait", "a", "--until-text", "Remote Control active", "--timeout", "1"])
+    assert r.exit_code == 0
+    assert "Remote Control active" in r.stdout
+
+
+def test_wait_until_text_timeout_exit_2(fake):
+    fake._get(A).screen = ["nothing here"]
+    r = runner.invoke(cli.app, ["wait", "a", "--until-text", "never", "--timeout", "0.2"])
+    assert r.exit_code == 2
+
+
+def test_new_tab_in_window(fake):
+    fake.add_session("WIN-SESS", "anchor", window_id="w-1")
+    r = runner.invoke(cli.app, ["new-tab", "--in-window", "w-1"])
+    assert r.exit_code == 0
+    new_sid = r.stdout.strip()
+    new_info = next(s for s in fake.list_sessions() if s.session_id == new_sid)
+    assert new_info.window_id == "w-1"
+
+
+def test_new_tab_in_unknown_window_exit_2(fake):
+    r = runner.invoke(cli.app, ["new-tab", "--in-window", "nonexistent"])
+    assert r.exit_code == 2
+
+
+def test_new_tab_in_caller_window_via_session(fake):
+    # #2: -s で呼び出し元ペインを指すと、その窓にタブが作られる（D5・クライアント側解決）。
+    B = "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
+    fake.add_session(B, "anchor", window_id="w-2")
+    r = runner.invoke(cli.app, ["new-tab", "-s", B])
+    assert r.exit_code == 0
+    new_sid = r.stdout.strip()
+    new_info = next(s for s in fake.list_sessions() if s.session_id == new_sid)
+    assert new_info.window_id == "w-2"

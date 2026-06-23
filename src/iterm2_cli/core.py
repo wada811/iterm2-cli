@@ -11,7 +11,7 @@ import re
 import time
 from collections.abc import Callable
 
-from .adapter import ITerm2Adapter, SessionInfo
+from .adapter import ITerm2Adapter, SessionInfo, SessionNotFound
 from .detect import (
     DEFAULT_BUSY_MARKERS,
     DEFAULT_NEEDS_INPUT_MARKERS,
@@ -22,7 +22,7 @@ from .detect import (
     wait_until,
 )
 from .keys import encode_keys
-from .resolver import SessionResolver
+from .resolver import ResolutionError, SessionResolver
 
 
 def _markers_from_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
@@ -35,6 +35,9 @@ def _markers_from_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
 
 
 class Controller:
+    # tab() の from_session 引数で「明示渡しの None」と「未指定」を区別する番兵。
+    _UNSET = object()
+
     def __init__(
         self,
         adapter: ITerm2Adapter,
@@ -68,6 +71,15 @@ class Controller:
     # --- 読み取り系 ----------------------------------------------------
     def list(self) -> list[SessionInfo]:
         return self.adapter.list_sessions()
+
+    def identify(self, target: str | None = None, *, session: str | None = None) -> SessionInfo:
+        # 呼び出し元（current）を解決し、その SessionInfo を list から引く（cmux identify 相当）。
+        # 専用 socket method を持たず list + クライアント側 current 解決の合成にする（D5）。
+        sid = self._resolve(target, session)
+        for s in self.list():
+            if s.session_id == sid:
+                return s
+        raise SessionNotFound(sid)
 
     def read(self, target: str | None = None, *, tail: int | None = None, session: str | None = None) -> list[str]:
         sid = self._resolve(target, session)
@@ -116,14 +128,29 @@ class Controller:
         target: str | None = None,
         *,
         until: State = State.IDLE,
+        until_text: str | None = None,
         timeout: float = 30.0,
         poll_interval: float = 0.5,
         session: str | None = None,
     ) -> State:
         sid = self._resolve(target, session)
+        if until_text is not None:
+            # 画面に marker が出現するまで待つ。wait_until の predicate を「marker 出現」にするだけ
+            # （達したら IDLE、未達は BUSY を返す state_fn として表現し、target=IDLE で待つ）。
+            needle = until_text.lower()
+
+            def text_state() -> State:
+                haystack = "\n".join(self.adapter.get_screen_contents(sid)).lower()
+                return State.IDLE if needle in haystack else State.BUSY
+
+            state_fn = text_state
+            target_state = State.IDLE
+        else:
+            state_fn = lambda: self._state(sid)  # noqa: E731
+            target_state = until
         return wait_until(
-            lambda: self._state(sid),
-            target=until,
+            state_fn,
+            target=target_state,
             timeout=timeout,
             poll_interval=poll_interval,
             sleep=self._sleep,
@@ -132,17 +159,56 @@ class Controller:
 
     # --- ライフサイクル ------------------------------------------------
     def split(
-        self, target: str | None = None, *, vertical: bool = True, profile: str | None = None, session: str | None = None
+        self,
+        target: str | None = None,
+        *,
+        vertical: bool = True,
+        before: bool = False,
+        profile: str | None = None,
+        session: str | None = None,
     ) -> str:
         sid = self._resolve(target, session)
-        return self.adapter.split_pane(sid, vertical=vertical, profile=profile)
+        return self.adapter.split_pane(sid, vertical=vertical, before=before, profile=profile)
 
-    def tab(self, *, profile: str | None = None, command: str | None = None, new_window: bool = False) -> str:
-        return self.adapter.create_tab(profile=profile, command=command, new_window=new_window)
+    def tab(
+        self,
+        target: str | None = None,
+        *,
+        profile: str | None = None,
+        command: str | None = None,
+        window_id: str | None = None,
+        session: str | None = None,
+        from_session: object = _UNSET,
+    ) -> str:
+        # from_session が明示渡し（デーモンの handler 経路）ならクライアントで解決済み。
+        # 未指定（直接利用＝CLI 非デーモン経路）なら、呼び出し元の current ペインを
+        # このプロセスで解決し「呼び出し元の窓」にタブを作る（D5: current 解決はクライアント側）。
+        if from_session is Controller._UNSET:
+            from_session = None
+            if window_id is None:
+                try:
+                    from_session = self._resolve(target, session)
+                except ResolutionError:
+                    # iTerm2 外などで current を特定できない → adapter 既定の current 窓へ。
+                    from_session = None
+        return self.adapter.create_tab(
+            profile=profile,
+            command=command,
+            window_id=window_id,
+            from_session=from_session,
+        )
+
+    def window(self, *, profile: str | None = None, command: str | None = None) -> str:
+        return self.adapter.create_window(profile=profile, command=command)
 
     def focus(self, target: str | None = None, *, session: str | None = None) -> str:
         sid = self._resolve(target, session)
         self.adapter.activate(sid)
+        return sid
+
+    def set_name(self, target: str | None, name: str, *, session: str | None = None) -> str:
+        sid = self._resolve(target, session)
+        self.adapter.set_name(sid, name)
         return sid
 
     def close(self, target: str | None = None, *, force: bool = False, session: str | None = None) -> str:

@@ -109,6 +109,13 @@ def test_split_returns_new_id():
     new_id = c.split(A, vertical=True)
     assert new_id != A
     assert new_id in [s.session_id for s in c.list()]
+    assert fa.splits[-1]["before"] is False  # 既定は後ろ
+
+
+def test_split_before_propagates_to_adapter():
+    fa, c = make()
+    c.split(A, vertical=True, before=True)
+    assert fa.splits[-1]["before"] is True
 
 
 def test_focus_and_close():
@@ -140,3 +147,76 @@ def test_wait_times_out_when_busy():
     c = Controller(fa, SessionResolver(), sleep=lambda dt: t.__setitem__("v", t["v"] + dt), clock=lambda: t["v"])
     with pytest.raises(WaitTimeout):
         c.wait(session=A, until=State.IDLE, timeout=3, poll_interval=1)
+
+
+def test_set_name_sets_display_name():
+    fa, c = make()
+    c.set_name(A, "🟢 worker")
+    assert fa._get(A).info.name == "🟢 worker"
+
+
+def test_set_name_via_label():
+    fa, c = make(labels={"a": A})
+    c.set_name("a", "renamed")
+    assert fa._get(A).info.name == "renamed"
+
+
+def test_wait_until_text_returns_when_marker_present():
+    fa, _ = make()
+    fa._get(A).screen = ["connecting...", "Remote Control active"]
+    t = {"v": 0.0}
+    c = Controller(fa, SessionResolver(), sleep=lambda dt: t.__setitem__("v", t["v"] + dt), clock=lambda: t["v"])
+    assert c.wait(session=A, until_text="Remote Control active", timeout=5, poll_interval=1) == State.IDLE
+
+
+def test_wait_until_text_is_case_insensitive():
+    fa, _ = make()
+    fa._get(A).screen = ["REMOTE CONTROL ACTIVE"]
+    t = {"v": 0.0}
+    c = Controller(fa, SessionResolver(), sleep=lambda dt: t.__setitem__("v", t["v"] + dt), clock=lambda: t["v"])
+    assert c.wait(session=A, until_text="remote control active", timeout=5, poll_interval=1) == State.IDLE
+
+
+def test_wait_until_text_times_out_when_absent():
+    fa, _ = make()
+    fa._get(A).screen = ["nothing relevant here"]
+    t = {"v": 0.0}
+    c = Controller(fa, SessionResolver(), sleep=lambda dt: t.__setitem__("v", t["v"] + dt), clock=lambda: t["v"])
+    with pytest.raises(WaitTimeout):
+        c.wait(session=A, until_text="never appears", timeout=3, poll_interval=1)
+
+
+def test_tab_in_window_places_session_in_window():
+    fa, c = make()
+    fa.add_session("WIN-SESS", "anchor", window_id="w-1")
+    new_id = c.tab(window_id="w-1")
+    new_info = next(s for s in c.list() if s.session_id == new_id)
+    assert new_info.window_id == "w-1"
+
+
+def test_tab_in_unknown_window_raises():
+    from iterm2_cli.adapter import SessionNotFound
+
+    fa, c = make()
+    with pytest.raises(SessionNotFound):
+        c.tab(window_id="w-nonexistent")
+
+
+def test_tab_defaults_to_caller_window():
+    # #2: 既定 tab は呼び出し元（current = $ITERM_SESSION_ID）の窓にタブを作る（D5）。
+    fa = FakeAdapter()
+    fa.add_session(A, "pane-a", window_id="w-caller")
+    c = Controller(fa, SessionResolver(env={"ITERM_SESSION_ID": f"x:{A}"}))
+    new_id = c.tab()
+    new_info = next(s for s in c.list() if s.session_id == new_id)
+    assert new_info.window_id == "w-caller"
+
+
+def test_tab_falls_back_when_current_unresolvable():
+    # current を特定できない（target も session も env も無い）場合は adapter 既定に委ねる
+    # （ResolutionError で落とさない）。
+    fa = FakeAdapter()
+    fa.add_session(A, "pane-a", window_id="w-1")
+    c = Controller(fa, SessionResolver(env={}))
+    new_id = c.tab()  # 例外を出さずに新タブを作る
+    assert new_id in [s.session_id for s in c.list()]

@@ -56,25 +56,47 @@ def is_alive(socket_path: Path | str, *, timeout: float = 0.5) -> bool:
         return False
 
 
+_CONN_TIMEOUT = 30.0  # 1 接続でリクエスト行の受信・応答送信に許す上限（stuck client 対策）
+
+
 class Daemon:
-    def __init__(self, controller: Controller, socket_path: Path | str | None = None) -> None:
+    def __init__(
+        self,
+        controller: Controller,
+        socket_path: Path | str | None = None,
+        *,
+        conn_timeout: float = _CONN_TIMEOUT,
+    ) -> None:
         self.controller = controller
         self.path = Path(socket_path) if socket_path is not None else default_socket_path()
+        self._conn_timeout = conn_timeout
         self._sock: socket.socket | None = None
         self._stop = False
 
     def serve(self) -> None:
         self._prepare()
         self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self._sock.bind(str(self.path))
-        os.chmod(self.path, 0o600)  # ローカル単一ユーザー前提（design.md §3 認可方針）
+        # bind 時点から 0600 相当で作る（bind→chmod 間に他ユーザが接続できる窓を塞ぐ）。
+        old_umask = os.umask(0o077)
+        try:
+            self._sock.bind(str(self.path))
+        finally:
+            os.umask(old_umask)
+        os.chmod(self.path, 0o600)  # 保険（ローカル単一ユーザー前提・design.md §3 認可方針）
         self._sock.listen(16)
+        # accept にタイムアウトを設け、ループが定期的に _stop を再確認できるようにする。
+        # 別スレッドからの close() はブロック中の accept() を Linux では確実に起こさない
+        # （macOS は起こす）ため、close 頼みだと stop() が効かず serve が止まらない。
+        self._sock.settimeout(0.5)
         try:
             while not self._stop:
                 try:
                     conn, _ = self._sock.accept()
+                except TimeoutError:
+                    continue  # 0.5s ごとに _stop を再チェックして stop() を確実に反映
                 except OSError:
                     break  # close() により叩き起こされた
+                conn.settimeout(None)  # accept のタイムアウトを継承させない（処理側で別途設定）
                 # 接続ごとにスレッド処理。長い wait が他コマンドを塞がない（HOL 回避）。
                 # RealAdapter は単一イベントループ上で呼び出しを直列化するためスレッド安全。
                 threading.Thread(target=self._serve_conn, args=(conn,), daemon=True).start()
@@ -83,7 +105,15 @@ class Daemon:
 
     def _serve_conn(self, conn: socket.socket) -> None:
         with conn:
-            self._handle(conn)
+            # 改行を送らず固まったクライアントが受信/応答スレッドを無期限に占有しないよう、
+            # socket 操作にタイムアウトを設ける（長い wait は handle 内の Controller 側で
+            # 進むため socket 操作中ではなく、このタイムアウトには掛からない）。
+            conn.settimeout(self._conn_timeout)
+            try:
+                self._handle(conn)
+            except OSError:
+                # timeout 含む socket エラー（stuck/切断クライアント）は接続を閉じて握り潰す。
+                pass
 
     def stop(self) -> None:
         """別スレッド/シグナルから安全に停止する。"""

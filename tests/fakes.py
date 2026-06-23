@@ -25,6 +25,8 @@ class FakeAdapter(ITerm2Adapter):
         self._sessions: dict[str, FakeSession] = {}
         self._order: list[str] = []
         self._counter = 0
+        # split_pane の引数記録（before/vertical の伝播をテストで検証する）。
+        self.splits: list[dict] = []
         for s in sessions or []:
             self._add(s)
 
@@ -60,24 +62,59 @@ class FakeAdapter(ITerm2Adapter):
     def send_text(self, session_id: str, text: str) -> None:
         self._get(session_id).sent.append(text)
 
-    def get_screen_contents(self, session_id: str, max_lines: int | None = None) -> list[str]:
-        lines = list(self._get(session_id).screen)
-        if max_lines is not None:
-            return lines[-max_lines:]
-        return lines
+    def get_screen_contents(self, session_id: str) -> list[str]:
+        return list(self._get(session_id).screen)
 
-    def split_pane(self, session_id: str, *, vertical: bool, profile: str | None = None) -> str:
+    def split_pane(
+        self, session_id: str, *, vertical: bool, before: bool = False, profile: str | None = None
+    ) -> str:
         parent = self._get(session_id)
+        self.splits.append({"session_id": session_id, "vertical": vertical, "before": before, "profile": profile})
         new_id = self._new_id("split")
         self.add_session(new_id, name="", tab_id=parent.info.tab_id, window_id=parent.info.window_id)
         return new_id
 
     def create_tab(
-        self, *, profile: str | None = None, command: str | None = None, new_window: bool = False
+        self,
+        *,
+        profile: str | None = None,
+        command: str | None = None,
+        window_id: str | None = None,
+        from_session: str | None = None,
     ) -> str:
-        new_id = self._new_id("win" if new_window else "tab")
+        if window_id is not None:
+            # 指定窓が存在するか（その窓に属する開いたセッションがあるか）を確認。
+            if not any(
+                s.info.window_id == window_id for s in self._sessions.values() if not s.closed
+            ):
+                raise SessionNotFound(window_id)
+            new_id = self._new_id("tab")
+            self.add_session(new_id, name="", window_id=window_id)
+            return new_id
+        if not [i for i in self._order if not self._sessions[i].closed]:
+            # 窓が 1 つも無い → タブの行き先が無いので新規ウィンドウを作る（フォールバック）。
+            return self.create_window(profile=profile, command=command)
+        if from_session is not None:
+            # 呼び出し元のペインを含む窓にタブを作る（D5）。
+            src = self._sessions.get(from_session)
+            if src is None or src.closed:
+                raise SessionNotFound(from_session)
+            new_id = self._new_id("tab")
+            self.add_session(new_id, name="", window_id=src.info.window_id)
+            return new_id
+        new_id = self._new_id("tab")
         self.add_session(new_id, name="")
         return new_id
+
+    def create_window(self, *, profile: str | None = None, command: str | None = None) -> str:
+        # 新規ウィンドウは一意な window_id を割り当てる（他の窓と混ざらないように）。
+        new_id = self._new_id("win")
+        self.add_session(new_id, name="", window_id=f"win-{new_id}")
+        return new_id
+
+    def set_name(self, session_id: str, name: str) -> None:
+        s = self._get(session_id)
+        s.info = _with(s.info, name=name)
 
     def activate(self, session_id: str) -> None:
         self._get(session_id)  # 存在チェック

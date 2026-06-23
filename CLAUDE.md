@@ -44,7 +44,7 @@ iTerm2 をスクリプト / AI エージェントから操作する CLI。同梱
 3. **`<target>` 解決順** = `--session <id>` → ラベル → `$ITERM_SESSION_ID`（current）。省略時 current（§4）。
 4. **永続状態は session_id↔label の最小マッピングのみ**。branch/cwd 等は都度 iTerm2 変数や FS から引く。
 5. **完了/busy 検知の優先順** = `user.itermcli_state`（`set-status` / OSC 1337 SetUserVar で書かれる）→ 画面マーカー（フォールバック・env で上書き可）（§7）。
-6. **全コマンドに `--json`** を用意（機械可読出力）。
+6. **構造化出力を返すコマンドには `--json`** を用意する（`list`/`read`/`busy`/`set-name`/`label ls`）。複数フィールドの機械可読出力はこれらに集約する。単一値しか返さないコマンド（`split`/`tab` の新 session_id、`wait` の最終状態）は **stdout に素の値を 1 行**で出し、`--json` は持たない（パイプで直接受けられるため）。値を返さない副作用コマンド（`send`/`focus`/`close`/`var set`/`set-status` 等）も `--json` は不要。
 7. **エラーは silent fail させない**（接続/認証失敗・対象セッション消失を明示）。
 
 ## 新しい操作を足す手順（it2api 機能の取り込み）

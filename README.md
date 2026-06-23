@@ -44,30 +44,38 @@ iterm2 wait                   # current が idle になるまで待つ
 
 ## コマンドリファレンス
 
+> **0.0.1 から更新する方へ**: コマンド名が一部変わりました（`split`→`new-split`、`tab`→`new-tab`、
+> `tab --window`→`new-window`、`set-name`→`rename`、`daemon --stop`→`daemon stop`）。移行は
+> [MIGRATION.md](./MIGRATION.md) を参照。
+
 `<target>`（対象ペイン）の指定は次の規則:
 
-- **ペイロードを持つコマンド**（send / send-key / var / set-status / set-progress）→ `-t/--target`
-- **対象のみのコマンド**（read / busy / wait / split / focus / close）→ 位置引数
+- **対象を `-t/--target` で渡すコマンド**（send / send-key / var / set-status / set-progress / rename / new-split / new-tab / identify）
+- **対象を位置引数で渡すコマンド**（read / busy / wait / focus / close）
+  - 省略可。`new-split` の位置引数は対象ではなく**方向**（right/left/down/up）
 - いずれも **省略時は current**（`$ITERM_SESSION_ID`）。`-s/--session <id>` で session_id を直接指定。
 - `<target>` 解決順: `-s <id>` → ラベル → current。
 
 | コマンド | 説明 | 例 |
 |---|---|---|
 | `list [--json]` | ペイン階層を列挙（session_id / name / 行列 / is_active） | `iterm2 list --json` |
+| `identify [-t T] [--json]` | 呼び出し元（current）の session を特定して出力（割当 label も）。cmux `identify` 相当 | `iterm2 identify --json` |
 | `send <text> [-t T] [-e]` | 本文を送信。`-e/--enter` で確定キーも送る | `iterm2 send "ls" -t worker -e` |
 | `send-key <keys...> [-t T]` | 特殊キー送出（enter/tab/esc/up/down/left/right/ctrl-c …） | `iterm2 send-key ctrl-c -t worker` |
 | `read [T] [--tail N] [--json]` | 画面内容を読む（末尾の空行は除去してから `--tail` を適用） | `iterm2 read --tail 40 --json` |
 | `busy [T] [--json]` | 状態判定。**busy のとき exit 1** | `iterm2 busy worker && echo idle` |
-| `wait [T] [--timeout S] [--until S]` | 指定状態（既定 idle）まで待つ | `iterm2 wait -s <id> --timeout 120` |
-| `split [T] [-h] [--profile P]` | 分割し新 session_id を出力（既定は垂直、`-h` で水平） | `iterm2 split -h` |
-| `tab [--cmd C] [--window] [--profile P]` | タブ（`--window` で新窓）を作り新 session_id を出力 | `iterm2 tab --cmd claude` |
+| `wait [T] [--timeout S] [--until S] [--until-text M]` | 指定状態（既定 idle）まで、または `--until-text M` で画面に文字列 M が出るまで待つ | `iterm2 wait -s <id> --until-text "Remote Control active"` |
+| `new-split [DIR] [-t T] [--profile P]` | ペインを分割し新 session_id を出力。方向は `right`(既定)/`left`/`down`/`up`（左右=垂直、上下=水平、left/up=前側） | `iterm2 new-split down -t worker` |
+| `new-tab [-t T] [--cmd C] [--in-window W] [--profile P]` | タブを作り新 session_id を出力（既定は呼び出し元=current の窓、`--in-window W` で指定窓内）。デーモン起動中でも current 窓はクライアント側で解決する | `iterm2 new-tab --in-window <wid> --cmd claude` |
+| `new-window [--cmd C] [--profile P]` | 新規ウィンドウを作り新 session_id を出力 | `iterm2 new-window --cmd claude` |
 | `focus [T]` | フォーカス移動 | `iterm2 focus worker` |
+| `rename <name> [-t T] [--json]` | ペインの表示名を変更 | `iterm2 rename "🟢 worker" -t worker` |
 | `close [T] [--force]` | ペイン/タブを閉じる | `iterm2 close -s <id> --force` |
 | `var get <name> [-t T]` / `var set <name> <value> [-t T]` | セッション変数 | `iterm2 var get user.x -t worker` |
 | `set-status <key> <value> [-t T]` | 状態を `user.<key>` に書く（後述） | `iterm2 set-status itermcli_state running` |
 | `set-progress <n> [-t T]` | 進捗を `user.itermcli_progress` に書く | `iterm2 set-progress 42` |
 | `label set <name> <id>` / `label ls [--json]` / `label rm <name>` | ラベル↔session_id（iTerm2 不要） | `iterm2 label set worker <id>` |
-| `daemon [--socket P] [--stop]` | 常駐デーモン起動／停止 | `iterm2 daemon` |
+| `daemon start [--socket P]` / `daemon stop` | 常駐デーモンの起動／停止 | `iterm2 daemon start` |
 | `ping` | 接続確認（`ok` を出力） | `iterm2 ping` |
 
 ### exit code
@@ -75,15 +83,18 @@ iterm2 wait                   # current が idle になるまで待つ
 | code | 意味 |
 |---|---|
 | 0 | 成功 |
-| 1 | `busy`=busy のとき / `label rm`=該当なし / `daemon`=既に起動中 |
-| 2 | エラー（対象解決不可・セッション不在・未知キー・デーモンエラー・接続失敗）。stderr に 1 行 |
+| 1 | `busy`=busy のとき / `label rm`=該当なし / `daemon start`=既に起動中 |
+| 2 | エラー（対象解決不可・セッション不在・未知キー・`wait` タイムアウト・デーモンエラー・接続失敗）。stderr に 1 行 |
 
 ### `--json` 出力の形
+
+`--json` は**複数フィールドの構造化出力を返すコマンド**にだけ用意する。単一値しか返さないコマンド（`new-split`/`new-tab`/`new-window` の新 session_id、`wait` の最終状態）は **stdout に素の値を 1 行**で出すのでそのままパイプで受けられる（`--json` は無い）。
 
 | コマンド | 形 |
 |---|---|
 | `list --json` | `[{"session_id","name","rows","cols","tab_id","window_id","is_active"}, …]` |
 | `read --json` | `{"lines": ["…", …]}` |
+| `set-name --json` | `{"session_id","name"}`（デーモン経由でも `session_id` は解決済み id） |
 | `busy --json` | `{"state": "busy" \| "idle" \| "needs-input" \| "unknown"}` |
 | `label ls --json` | `{"<label>": "<session_id>", …}` |
 
@@ -117,15 +128,15 @@ printf '\033]1337;SetUserVar=itermcli_state=%s\a' "$(printf running | base64)"
 接続を保持し、各コマンドは Unix socket 経由になる（**実測 list ≈ 5ms**）。
 
 ```sh
-iterm2 daemon         # 常駐起動（Ctrl-C で停止）
-iterm2 daemon --stop  # 停止
+iterm2 daemon start  # 常駐起動（Ctrl-C で停止）
+iterm2 daemon stop   # 停止
 ```
 
 - デーモン起動中は**クライアントに iterm2 パッケージ不要**（socket 経由なので `--extra iterm2` すら要らない）。
 - CLI はデーモンの有無を自動判定し、未起動なら都度接続にフォールバック（**同一コマンド表面**）。
 - `<target>` の current 解決はクライアント側で行うため、デーモンが別プロセスでも各ペインの current を正しく解決。
 - 接続ごとにスレッド処理するため、長い `wait` が他コマンドを塞がない。
-- socket パスは `ITERM2_CLI_SOCKET`（既定 `/tmp/iterm2-cli.sock`、パーミッション 0600）。
+- socket パスは `ITERM2_CLI_SOCKET`（既定 `${XDG_RUNTIME_DIR:-/tmp}/iterm2-cli.sock`、パーミッション 0600）。
 
 ---
 
@@ -185,6 +196,7 @@ socket のプリミティブの上に**薄いラッパーとして外側に**載
 | `src/iterm2_cli/daemon.py` / `client.py` / `protocol.py` | デーモン / クライアント / socket プロトコル |
 | `tests/` | ユニット（FakeAdapter）／`tests/integration/`（実 iTerm2・オプトイン） |
 | `docs/` | [requirements](./docs/requirements.md) / [design](./docs/design.md) / [decisions](./docs/decisions.md)（設計思想・なぜ）/ [research](./docs/research.md) |
+| [MIGRATION.md](./MIGRATION.md) | 0.0.1 からの破壊的変更（コマンド改名）の移行ガイド |
 | [CLAUDE.md](./CLAUDE.md) | 開発ガイド（手順・設計不変条件・テスト戦略） |
 
 ---
