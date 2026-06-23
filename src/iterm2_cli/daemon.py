@@ -84,12 +84,19 @@ class Daemon:
             os.umask(old_umask)
         os.chmod(self.path, 0o600)  # 保険（ローカル単一ユーザー前提・design.md §3 認可方針）
         self._sock.listen(16)
+        # accept にタイムアウトを設け、ループが定期的に _stop を再確認できるようにする。
+        # 別スレッドからの close() はブロック中の accept() を Linux では確実に起こさない
+        # （macOS は起こす）ため、close 頼みだと stop() が効かず serve が止まらない。
+        self._sock.settimeout(0.5)
         try:
             while not self._stop:
                 try:
                     conn, _ = self._sock.accept()
+                except TimeoutError:
+                    continue  # 0.5s ごとに _stop を再チェックして stop() を確実に反映
                 except OSError:
                     break  # close() により叩き起こされた
+                conn.settimeout(None)  # accept のタイムアウトを継承させない（処理側で別途設定）
                 # 接続ごとにスレッド処理。長い wait が他コマンドを塞がない（HOL 回避）。
                 # RealAdapter は単一イベントループ上で呼び出しを直列化するためスレッド安全。
                 threading.Thread(target=self._serve_conn, args=(conn,), daemon=True).start()

@@ -7,6 +7,7 @@
 
 ### Fixed
 
+- Linux でデーモンの `stop()` が `serve` ループを止められない問題を修正（`accept()` にタイムアウトを設け定期的に `_stop` を再確認）。別スレッドからの `close()` はブロック中の `accept()` を Linux では確実に起こさないため、停止後も serve スレッドが残っていた。
 - `set-name --json` がデーモン経由で `session_id: null` を返していた契約破れを修正（クライアント側で解決した session_id を返す）。
 - 既定の `tab`（current 窓）がデーモンプロセス視点の current 窓に作られうる D5 違反を修正。呼び出し元の窓をクライアント側で解決し、デーモンには具体的 session_id（`from_session`）を渡すようにした。`tab` に `-t/--target` `-s/--session` を追加。
 
